@@ -1,0 +1,37 @@
+{
+  "external_session_id": "sample-claude-code-001",
+  "agent_type": "claude_code",
+  "user_email": "admin@harnessquest.local",
+  "project_name": "HarnessQuest",
+  "repository": "git@example.com:team/harnessquest.git",
+  "branch": "main",
+  "commit_sha": "0000000",
+  "source": "sample",
+  "summary": "Agent attempted to modify a case workflow but failed to update validation.",
+  "user_input": "Add a closed status to the AI case workflow and make sure the dashboard reflects it.",
+  "assistant_output": "Implemented the status but did not update the dashboard query.",
+  "tool_calls": [
+    {
+      "name": "edit_file",
+      "input": "backend/app/models.py",
+      "output": "Added enum value."
+    }
+  ],
+  "shell_commands": [
+    {
+      "command": "pytest",
+      "exit_code": 1,
+      "output": "AssertionError: dashboard open case count is incorrect"
+    }
+  ],
+  "errors": [
+    {
+      "type": "test_failure",
+      "message": "Dashboard did not exclude closed cases."
+    }
+  ],
+  "git_diff": "diff --git a/backend/app/models.py b/backend/app/models.py\n+    closed = \"closed\"\n",
+  "metadata": {
+    "importance": "demo"
+  }
+}

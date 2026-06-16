@@ -1,0 +1,160 @@
+{
+  "external_session_id": "hq-demo-session-20260617-001",
+  "langfuse_session_id": "hq-demo-session-20260617-001",
+  "langfuse_trace_id": "trace_hq_agent_debug_20260617_001",
+  "agent_type": "claude_code",
+  "user_email": "admin@harnessquest.local",
+  "project_name": "HarnessQuest",
+  "repository": "git@example.com:team/harnessquest.git",
+  "branch": "feature/ai-case-console",
+  "commit_sha": "b8f2c9a",
+  "source": "langfuse-style-simulation",
+  "summary": "用户要求 Agent 修复 Case 看板的关闭率统计。Agent 正确定位了 dashboard API，但漏改前端中文枚举展示，导致验证阶段发现状态仍显示英文。",
+  "user_input": "请检查 AI Case 看板里关闭率和状态分布，修复 closed case 仍然计入 open case 的问题，并确认前端状态展示是中文。",
+  "assistant_output": "我已修改 dashboard summary 查询，使 closed case 不再计入 open_cases；但状态分布仍返回原始枚举，前端未做中文映射。",
+  "tool_calls": [
+    {
+      "name": "read_file",
+      "input": {
+        "path": "backend/app/routes/dashboard.py"
+      },
+      "output": "Found summary() using AgentCase.status != CaseStatus.closed for open_cases."
+    },
+    {
+      "name": "edit_file",
+      "input": {
+        "path": "frontend/src/main.tsx",
+        "intent": "Render dashboard breakdown labels"
+      },
+      "output": "Changed table labels partially, but did not add enum translation for status/problem_type."
+    },
+    {
+      "name": "run_command",
+      "input": {
+        "command": "npm run typecheck && npm run lint"
+      },
+      "output": "Passed"
+    }
+  ],
+  "shell_commands": [
+    {
+      "command": "curl -k https://localhost:18443/api/v1/dashboard/case-breakdown",
+      "exit_code": 0,
+      "output": "{\"by_status\":[{\"key\":\"to_triage\",\"count\":2},{\"key\":\"closed\",\"count\":1}],\"by_problem_type\":[{\"key\":\"tool_call_failure\",\"count\":1}]}"
+    },
+    {
+      "command": "npm run typecheck && npm run lint",
+      "exit_code": 0,
+      "output": "tsc --noEmit OK; eslint OK"
+    }
+  ],
+  "file_edits": [
+    {
+      "path": "backend/app/routes/dashboard.py",
+      "change": "Extracted open_cases_query and excluded CaseStatus.closed."
+    },
+    {
+      "path": "frontend/src/main.tsx",
+      "change": "Updated visible dashboard headings, but missed enum value localization."
+    }
+  ],
+  "errors": [
+    {
+      "type": "review_failure",
+      "level": "WARNING",
+      "message": "验证时发现状态枚举仍显示 to_triage/closed，不符合默认中文页面要求。"
+    }
+  ],
+  "git_diff": "diff --git a/frontend/src/main.tsx b/frontend/src/main.tsx\n@@\n- <span>{item.key}</span>\n+ <span>{item.key}</span>\n# Reviewer note: should use label(item.key) for localized enum labels.\n",
+  "metadata": {
+    "langfuse_shape": {
+      "sessionId": "hq-demo-session-20260617-001",
+      "trace": {
+        "id": "trace_hq_agent_debug_20260617_001",
+        "name": "ai-case-dashboard-debug",
+        "userId": "admin@harnessquest.local",
+        "tags": ["demo", "agent-debug", "frontend-i18n", "dashboard"],
+        "input": {
+          "query": "修复关闭率统计，并确认状态展示中文"
+        },
+        "output": {
+          "answer": "关闭率已修复，但状态中文展示遗漏"
+        },
+        "metadata": {
+          "environment": "local-docker-compose",
+          "repo": "HarnessQuest",
+          "agent": "claude_code",
+          "model": "claude-3-5-sonnet",
+          "branch": "feature/ai-case-console"
+        }
+      },
+      "observations": [
+        {
+          "id": "obs_root_user_request",
+          "type": "span",
+          "name": "user-request",
+          "level": "DEFAULT",
+          "input": {
+            "query": "请检查 AI Case 看板里关闭率和状态分布"
+          },
+          "output": {
+            "plan": "检查 dashboard API、运行前端构建、验证页面显示"
+          }
+        },
+        {
+          "id": "obs_llm_plan",
+          "type": "generation",
+          "name": "llm-plan",
+          "model": "claude-3-5-sonnet",
+          "input": {
+            "messages": [
+              {
+                "role": "user",
+                "content": "修复 closed case 仍然计入 open case 的问题，并确认前端状态展示是中文。"
+              }
+            ]
+          },
+          "output": "我会检查 dashboard 聚合逻辑，并确认前端枚举翻译。",
+          "usage": {
+            "input": 1432,
+            "output": 186
+          }
+        },
+        {
+          "id": "obs_tool_read_dashboard",
+          "type": "tool",
+          "name": "read_file",
+          "input": {
+            "path": "backend/app/routes/dashboard.py"
+          },
+          "output": "open_cases query already excludes closed in summary, breakdown still returns raw enum values."
+        },
+        {
+          "id": "obs_tool_run_tests",
+          "type": "tool",
+          "name": "run_command",
+          "input": {
+            "command": "npm run typecheck && npm run lint"
+          },
+          "output": "Passed",
+          "level": "DEFAULT"
+        },
+        {
+          "id": "obs_review_warning",
+          "type": "span",
+          "name": "human-review",
+          "level": "WARNING",
+          "statusMessage": "前端状态枚举仍显示英文/原始值，需要补充中文映射。",
+          "input": {
+            "screen": "Dashboard breakdown"
+          },
+          "output": {
+            "finding": "to_triage/closed/tool_call_failure are visible to Chinese users"
+          }
+        }
+      ]
+    },
+    "expected_resolution": "前端所有 dashboard breakdown key 需要经过 i18n label 映射；该问题适合沉淀为 UI 国际化检查项。",
+    "simulated_from_docs": "Langfuse sessions group traces by sessionId; traces contain observations such as generations and tool calls, with input/output, metadata, tags, and log levels."
+  }
+}
