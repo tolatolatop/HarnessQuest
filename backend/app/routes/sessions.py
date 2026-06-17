@@ -1,4 +1,5 @@
 from typing import Any
+import json
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile
 from sqlalchemy import select
@@ -124,14 +125,63 @@ async def upload_session_file(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> AgentSession:
-    import json
-
     content = await file.read()
     try:
         payload = SessionImport.model_validate(json.loads(content.decode("utf-8")))
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"Invalid JSON payload: {exc}") from exc
     return await import_session(payload, current_user, db)
+
+
+@router.post("/upload/auto", response_model=SessionRead)
+async def upload_auto_session_file(
+    file: UploadFile,
+    project_name: str | None = None,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> AgentSession:
+    content = await file.read()
+    text = content.decode("utf-8")
+    filename = file.filename or "agent-session"
+    errors: list[str] = []
+
+    if _looks_like_claude_jsonl(text):
+        try:
+            payload_data = convert_claude_jsonl_content(
+                text,
+                source_name=filename,
+                project_name=project_name,
+                user_email=current_user.email,
+            )
+            return await import_session(SessionImport.model_validate(payload_data), current_user, db)
+        except Exception as exc:
+            errors.append(f"Claude Code JSONL: {exc}")
+
+    try:
+        data = json.loads(text)
+        if isinstance(data, dict):
+            if _looks_like_opencode_json(data):
+                try:
+                    payload_data = convert_opencode_export_content(
+                        text,
+                        source_name=filename,
+                        project_name=project_name,
+                        user_email=current_user.email,
+                    )
+                    return await import_session(SessionImport.model_validate(payload_data), current_user, db)
+                except Exception as exc:
+                    errors.append(f"opencode JSON: {exc}")
+            try:
+                return await import_session(SessionImport.model_validate(data), current_user, db)
+            except Exception as exc:
+                errors.append(f"HarnessQuest JSON: {exc}")
+    except Exception as exc:
+        errors.append(f"JSON object: {exc}")
+
+    detail = "Unable to identify session record format. Supported formats: Claude Code JSONL, opencode JSON export, HarnessQuest JSON."
+    if errors:
+        detail = f"{detail} Tried: {'; '.join(errors)}"
+    raise HTTPException(status_code=400, detail=detail)
 
 
 @router.post("/upload/claude-jsonl", response_model=SessionRead)
@@ -153,6 +203,35 @@ async def upload_claude_jsonl_file(
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"Invalid Claude Code JSONL payload: {exc}") from exc
     return await import_session(payload, current_user, db)
+
+
+def _looks_like_claude_jsonl(content: str) -> bool:
+    seen = 0
+    for line in content.splitlines():
+        if not line.strip():
+            continue
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError:
+            return False
+        if not isinstance(row, dict):
+            return False
+        seen += 1
+        if row.get("sessionId") and row.get("type") in {"user", "assistant", "system"}:
+            return True
+        if row.get("message") and row.get("type") in {"user", "assistant"}:
+            return True
+    return seen > 1
+
+
+def _looks_like_opencode_json(data: dict[str, Any]) -> bool:
+    session = data.get("session") or data.get("info")
+    messages = data.get("messages") or data.get("message") or data.get("conversation")
+    if isinstance(session, dict) and isinstance(messages, list):
+        return True
+    if isinstance(messages, list):
+        return any(isinstance(item, dict) and isinstance(item.get("info"), dict) and isinstance(item.get("parts"), list) for item in messages)
+    return False
 
 
 @router.post("/upload/opencode-json", response_model=SessionRead)

@@ -42,6 +42,7 @@ type Case = {
   expected_result?: string;
   actual_result?: string;
   reproducible?: boolean | null;
+  feedback_reporter?: string;
   responsible_owner?: string;
   tags?: string[] | null;
   closure_practice?: string;
@@ -54,7 +55,6 @@ type JsonValue = null | boolean | number | string | JsonValue[] | JsonObject;
 type JsonObject = { [key in string]: JsonValue };
 type ChatBlockKind = 'user' | 'assistant' | 'thinking' | 'tool' | 'function' | 'mcp' | 'skill' | 'shell' | 'file' | 'error' | 'diff' | 'observation' | 'metadata';
 type ChatBlock = { kind: ChatBlockKind; title: string; body: string; meta?: string };
-type SessionUploadFormat = 'claude-jsonl' | 'opencode-json';
 const CASE_SEVERITIES = ['low', 'medium', 'high', 'critical'] as const;
 const CASE_PROBLEM_TYPES = [
   'incorrect_model_answer',
@@ -697,11 +697,11 @@ function CreateCaseModal({ onClose, onCreated }: { onClose: () => void; onCreate
   const [expectedResult, setExpectedResult] = useState('');
   const [actualResult, setActualResult] = useState('');
   const [reproducible, setReproducible] = useState('');
+  const [feedbackReporter, setFeedbackReporter] = useState('');
   const [responsibleOwner, setResponsibleOwner] = useState('');
   const [severity, setSeverity] = useState('medium');
   const [problemType, setProblemType] = useState('other');
   const [tags, setTags] = useState('');
-  const [format, setFormat] = useState<SessionUploadFormat>('claude-jsonl');
   const [file, setFile] = useState<File | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
@@ -716,8 +716,7 @@ function CreateCaseModal({ onClose, onCreated }: { onClose: () => void; onCreate
     try {
       const formData = new FormData();
       formData.set('file', file);
-      const uploadPath = format === 'opencode-json' ? '/sessions/upload/opencode-json' : '/sessions/upload/claude-jsonl';
-      const session = await requestForm<Session>(uploadPath, formData);
+      const session = await requestForm<Session>('/sessions/upload/auto', formData);
       const normalizedTitle = title.trim();
       const created = await request<Case>('/cases', {
         method: 'POST',
@@ -731,6 +730,7 @@ function CreateCaseModal({ onClose, onCreated }: { onClose: () => void; onCreate
           expected_result: expectedResult || null,
           actual_result: actualResult || null,
           reproducible: reproducible === '' ? null : reproducible === 'true',
+          feedback_reporter: feedbackReporter || null,
           responsible_owner: responsibleOwner || null,
           tags: parseTags(tags),
         }),
@@ -747,7 +747,7 @@ function CreateCaseModal({ onClose, onCreated }: { onClose: () => void; onCreate
       <form className="caseCreateModal" onSubmit={submit} onMouseDown={e => e.stopPropagation()}>
         <header className="modalHeader">
           <div className="modalHeaderMain">
-            <div className="modalTitleRow"><span>{t.createCaseTitle}</span><strong>{format === 'opencode-json' ? t.opencodeJson : t.claudeCodeJsonl}</strong></div>
+            <div className="modalTitleRow"><span>{t.createCaseTitle}</span><strong>{t.autoDetectSession}</strong></div>
           </div>
           <button className="iconButton" type="button" aria-label={t.closeModal} onClick={onClose}><X size={18} /></button>
         </header>
@@ -759,9 +759,9 @@ function CreateCaseModal({ onClose, onCreated }: { onClose: () => void; onCreate
           <label>{t.severity}<select value={severity} onChange={e => setSeverity(e.target.value)}>{CASE_SEVERITIES.map(item => <option key={item} value={item}>{label(item)}</option>)}</select></label>
           <label>{t.problemType}<select value={problemType} onChange={e => setProblemType(e.target.value)}>{CASE_PROBLEM_TYPES.map(item => <option key={item} value={item}>{label(item)}</option>)}</select></label>
           <label>{t.reproducible}<select value={reproducible} onChange={e => setReproducible(e.target.value)}><option value="">{t.reproducibleUnknown}</option><option value="true">{t.reproducibleYes}</option><option value="false">{t.reproducibleNo}</option></select></label>
+          <label>{t.feedbackReporter}<input value={feedbackReporter} onChange={e => setFeedbackReporter(e.target.value)} /></label>
           <label>{t.responsibleOwner}<input value={responsibleOwner} onChange={e => setResponsibleOwner(e.target.value)} /></label>
           <label>{t.tags}<input value={tags} onChange={e => setTags(e.target.value)} placeholder={t.tagsPlaceholder} /></label>
-          <label>{t.sessionFormat}<select value={format} onChange={e => setFormat(e.target.value as SessionUploadFormat)}><option value="claude-jsonl">{t.claudeCodeJsonl}</option><option value="opencode-json">{t.opencodeJson}</option></select></label>
           <label>{t.sessionRecordFile}<input type="file" accept=".json,.jsonl,application/json,application/jsonl,text/plain" required onChange={e => setFile(e.target.files?.[0] ?? null)} /></label>
           {error && <div className="error">{error}</div>}
         </div>
@@ -788,6 +788,7 @@ function CaseDetailPanel({ caseId, onChanged }: { caseId: string | null; onChang
     severity: 'medium',
     problem_type: 'other',
     reproducible: '',
+    feedback_reporter: '',
     responsible_owner: '',
     tags: '',
     closure_practice: '',
@@ -814,6 +815,7 @@ function CaseDetailPanel({ caseId, onChanged }: { caseId: string | null; onChang
       severity: detail.severity,
       problem_type: detail.problem_type,
       reproducible: detail.reproducible === null || detail.reproducible === undefined ? '' : String(detail.reproducible),
+      feedback_reporter: detail.feedback_reporter ?? '',
       responsible_owner: detail.responsible_owner ?? '',
       tags: (detail.tags ?? []).join(', '),
       closure_practice: detail.closure_practice ?? '',
@@ -871,6 +873,7 @@ function CaseDetailPanel({ caseId, onChanged }: { caseId: string | null; onChang
           severity: caseForm.severity,
           problem_type: caseForm.problem_type,
           reproducible: caseForm.reproducible === '' ? null : caseForm.reproducible === 'true',
+          feedback_reporter: caseForm.feedback_reporter || null,
           responsible_owner: caseForm.responsible_owner || null,
           tags: parseTags(caseForm.tags),
           closure_practice: caseForm.closure_practice || null,
@@ -899,6 +902,7 @@ function CaseDetailPanel({ caseId, onChanged }: { caseId: string | null; onChang
         <label>{t.severity}<select value={caseForm.severity} onChange={e => updateCaseForm('severity', e.target.value)}>{CASE_SEVERITIES.map(item => <option key={item} value={item}>{label(item)}</option>)}</select></label>
         <label>{t.problemType}<select value={caseForm.problem_type} onChange={e => updateCaseForm('problem_type', e.target.value)}>{CASE_PROBLEM_TYPES.map(item => <option key={item} value={item}>{label(item)}</option>)}</select></label>
         <label>{t.reproducible}<select value={caseForm.reproducible} onChange={e => updateCaseForm('reproducible', e.target.value)}><option value="">{t.reproducibleUnknown}</option><option value="true">{t.reproducibleYes}</option><option value="false">{t.reproducibleNo}</option></select></label>
+        <label>{t.feedbackReporter}<input value={caseForm.feedback_reporter} onChange={e => updateCaseForm('feedback_reporter', e.target.value)} /></label>
         <label>{t.responsibleOwner}<input value={caseForm.responsible_owner} onChange={e => updateCaseForm('responsible_owner', e.target.value)} /></label>
         <label>{t.tags}<input value={caseForm.tags} onChange={e => updateCaseForm('tags', e.target.value)} placeholder={t.tagsPlaceholder} /></label>
         <label>{t.closurePractice}<textarea value={caseForm.closure_practice} onChange={e => updateCaseForm('closure_practice', e.target.value)} /></label>

@@ -131,6 +131,7 @@ class AgentCase(Base):
     expected_result: Mapped[str | None] = mapped_column(Text, nullable=True)
     actual_result: Mapped[str | None] = mapped_column(Text, nullable=True)
     reproducible: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    feedback_reporter: Mapped[str | None] = mapped_column(String(255), nullable=True)
     responsible_owner: Mapped[str | None] = mapped_column(String(255), nullable=True)
     tags: Mapped[list] = mapped_column(JSON, default=list)
     closure_practice: Mapped[str | None] = mapped_column(Text, nullable=True)

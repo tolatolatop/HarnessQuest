@@ -101,6 +101,27 @@ def opencode_upload(
         rich_print(f"[green]created case[/green] {case['id']}")
 
 
+@app.command("auto-upload")
+def auto_upload(
+    path: Path = typer.Argument(..., exists=True),
+    case_title: str | None = typer.Option(None),
+    base_url: str = typer.Option("http://localhost:8000", envvar="HARNESSQUEST_BASE_URL"),
+    token: str | None = typer.Option(None, envvar="HARNESSQUEST_TOKEN"),
+) -> None:
+    client = _client(base_url, token)
+    session = client.upload_auto(path)
+    rich_print(f"[green]uploaded auto-detected session[/green] {path} -> session {session['id']} ({session['agent_type']})")
+    if case_title:
+        case = client.create_case(
+            title=case_title,
+            session_id=session["id"],
+            source="offline_log_import",
+            severity="medium",
+            problem_type="other",
+        )
+        rich_print(f"[green]created case[/green] {case['id']}")
+
+
 @app.command("case-create")
 def case_create(
     title: str = typer.Option(...),

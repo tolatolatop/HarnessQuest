@@ -68,14 +68,20 @@ Upload a JSON file:
 harnessquest upload examples/sample-session.json --base-url http://localhost:8000
 ```
 
-Upload an opencode session exported with the official CLI:
+Upload a Claude Code JSONL, opencode export JSON, or HarnessQuest JSON payload with auto-detection:
+
+```bash
+harnessquest auto-upload agent-session.json
+```
+
+Export and upload an opencode session with the official CLI:
 
 ```bash
 opencode export <sessionID> > opencode-session.json
-harnessquest opencode-upload opencode-session.json --base-url http://localhost:8000
+harnessquest auto-upload opencode-session.json --base-url http://localhost:8000
 ```
 
-The web console also supports `opencode JSON` when creating a case from an uploaded session record.
+The web console auto-detects Claude Code JSONL and opencode JSON when creating a case from an uploaded session record.
 
 Create a case from the uploaded session in the UI, or via CLI:
 

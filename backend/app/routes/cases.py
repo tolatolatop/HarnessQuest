@@ -64,6 +64,7 @@ def list_cases(
                     AgentCase.scene_description.ilike(keyword),
                     AgentCase.expected_result.ilike(keyword),
                     AgentCase.actual_result.ilike(keyword),
+                    AgentCase.feedback_reporter.ilike(keyword),
                     AgentCase.responsible_owner.ilike(keyword),
                     AgentCase.closure_practice.ilike(keyword),
                     AgentCase.feedback_acceptance_conclusion.ilike(keyword),

@@ -7,6 +7,7 @@ AGENT_CASE_COLUMNS = {
     "expected_result": "TEXT",
     "actual_result": "TEXT",
     "reproducible": "BOOLEAN",
+    "feedback_reporter": "VARCHAR(255)",
     "responsible_owner": "VARCHAR(255)",
     "tags": "JSON",
     "closure_practice": "TEXT",
