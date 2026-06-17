@@ -8,6 +8,7 @@ from app.db import get_db
 from app.dependencies import get_current_user
 from app.models import AgentSession, Project, User
 from app.schemas import SessionImport, SessionRead
+from app.services.claude_jsonl import convert_claude_jsonl_content
 from app.services.langfuse import write_langfuse_trace
 from app.services.storage import ObjectStorage
 
@@ -129,4 +130,25 @@ async def upload_session_file(
         payload = SessionImport.model_validate(json.loads(content.decode("utf-8")))
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"Invalid JSON payload: {exc}") from exc
+    return await import_session(payload, current_user, db)
+
+
+@router.post("/upload/claude-jsonl", response_model=SessionRead)
+async def upload_claude_jsonl_file(
+    file: UploadFile,
+    project_name: str | None = None,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> AgentSession:
+    content = await file.read()
+    try:
+        payload_data = convert_claude_jsonl_content(
+            content.decode("utf-8"),
+            source_name=file.filename or "claude-session.jsonl",
+            project_name=project_name,
+            user_email=current_user.email,
+        )
+        payload = SessionImport.model_validate(payload_data)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Invalid Claude Code JSONL payload: {exc}") from exc
     return await import_session(payload, current_user, db)

@@ -5,15 +5,12 @@ import {
   AlertTriangle,
   BarChart3,
   Bot,
-  Brain,
   CheckCircle2,
   ClipboardList,
-  Code2,
   Database,
   LogOut,
   PlayCircle,
-  Terminal,
-  Wrench,
+  Upload,
   X,
 } from 'lucide-react';
 import { label, t } from './i18n';
@@ -45,6 +42,23 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const res = await fetch(`${API}/api/v1${path}`, {
     ...options,
     headers,
+  });
+  if (!res.ok) {
+    throw new ApiError(res.status, await res.text());
+  }
+  return (await res.json()) as T;
+}
+
+async function requestForm<T>(path: string, formData: FormData): Promise<T> {
+  const token = localStorage.getItem('hq_token');
+  const headers = new Headers();
+  if (token) {
+    headers.set('Authorization', `Bearer ${token}`);
+  }
+  const res = await fetch(`${API}/api/v1${path}`, {
+    method: 'POST',
+    headers,
+    body: formData,
   });
   if (!res.ok) {
     throw new ApiError(res.status, await res.text());
@@ -111,6 +125,22 @@ function pushIfText(blocks: ChatBlock[], kind: ChatBlockKind, title: string, val
   }
 }
 
+function messageKind(role: string): ChatBlockKind {
+  const normalized = role.toLowerCase();
+  if (normalized.includes('user')) return 'user';
+  if (normalized.includes('assistant') || normalized.includes('agent')) return 'assistant';
+  if (normalized.includes('thinking') || normalized.includes('reasoning')) return 'thinking';
+  if (normalized.includes('shell') || normalized.includes('bash') || normalized.includes('command')) return 'shell';
+  if (normalized.includes('file') || normalized.includes('edit') || normalized.includes('write')) return 'file';
+  if (normalized.includes('diff')) return 'diff';
+  if (normalized.includes('tool')) return 'tool';
+  if (normalized.includes('function')) return 'function';
+  if (normalized.includes('mcp')) return 'mcp';
+  if (normalized.includes('skill')) return 'skill';
+  if (normalized.includes('error')) return 'error';
+  return 'observation';
+}
+
 function classifyCall(name: string, fallback: ChatBlockKind = 'tool'): ChatBlockKind {
   const lowered = name.toLowerCase();
   if (lowered.includes('mcp')) return 'mcp';
@@ -136,49 +166,61 @@ function observationKind(observation: JsonObject): ChatBlockKind {
 function extractChatBlocks(raw: JsonValue | null): ChatBlock[] {
   if (!isObject(raw)) return [];
   const blocks: ChatBlock[] = [];
-  pushIfText(blocks, 'user', t.userMessage, field(raw, 'user_input'));
-  pushIfText(blocks, 'assistant', t.assistantMessage, field(raw, 'assistant_output'));
-  pushIfText(blocks, 'thinking', t.thinkingMessage, field(raw, 'thinking') ?? field(raw, 'reasoning'));
-
-  for (const call of asArray(field(raw, 'tool_calls'))) {
-    if (!isObject(call)) continue;
-    const name = safeLabel(field(call, 'name'), t.toolCall);
-    blocks.push({
-      kind: classifyCall(name),
-      title: name,
-      body: `Input:\n${pretty(field(call, 'input'))}\n\nOutput:\n${pretty(field(call, 'output'))}`,
-      meta: t.toolCall,
-    });
-  }
-
-  for (const command of asArray(field(raw, 'shell_commands'))) {
-    if (!isObject(command)) continue;
-    blocks.push({
-      kind: 'shell',
-      title: safeLabel(field(command, 'command'), t.shellCommand),
-      body: `Exit: ${pretty(field(command, 'exit_code'))}\n\n${pretty(field(command, 'output'))}`,
-      meta: t.shellCommand,
-    });
-  }
-
-  for (const edit of asArray(field(raw, 'file_edits'))) {
-    if (!isObject(edit)) continue;
-    blocks.push({
-      kind: 'file',
-      title: safeLabel(field(edit, 'path'), t.fileEdit),
-      body: pretty(field(edit, 'change') ?? edit),
-      meta: t.fileEdit,
-    });
-  }
-
-  for (const error of asArray(field(raw, 'errors'))) {
-    blocks.push({ kind: 'error', title: t.errorRecord, body: pretty(error) });
-  }
-
-  pushIfText(blocks, 'diff', t.gitDiff, field(raw, 'git_diff'));
-
   const metadataValue = field(raw, 'metadata');
   const metadata = isObject(metadataValue) ? metadataValue : null;
+  const conversation = [...asArray(field(raw, 'conversation')), ...asArray(field(raw, 'messages')), ...asArray(field(metadata, 'conversation')), ...asArray(field(metadata, 'messages'))];
+  const hasConversation = conversation.length > 0;
+  for (const message of conversation) {
+    if (!isObject(message)) continue;
+    const role = safeLabel(field(message, 'role') ?? field(message, 'type'), t.observation);
+    const title = safeLabel(field(message, 'title'), label(role));
+    pushIfText(blocks, messageKind(role), title, field(message, 'content') ?? field(message, 'message') ?? field(message, 'text') ?? message, safeLabel(field(message, 'timestamp'), role));
+  }
+  if (blocks.length === 0) {
+    pushIfText(blocks, 'user', t.userMessage, field(raw, 'user_input'));
+    pushIfText(blocks, 'assistant', t.assistantMessage, field(raw, 'assistant_output'));
+    pushIfText(blocks, 'thinking', t.thinkingMessage, field(raw, 'thinking') ?? field(raw, 'reasoning'));
+  }
+
+  if (!hasConversation) {
+    for (const call of asArray(field(raw, 'tool_calls'))) {
+      if (!isObject(call)) continue;
+      const name = safeLabel(field(call, 'name'), t.toolCall);
+      blocks.push({
+        kind: classifyCall(name),
+        title: name,
+        body: `Input:\n${pretty(field(call, 'input'))}\n\nOutput:\n${pretty(field(call, 'output'))}`,
+        meta: t.toolCall,
+      });
+    }
+
+    for (const command of asArray(field(raw, 'shell_commands'))) {
+      if (!isObject(command)) continue;
+      blocks.push({
+        kind: 'shell',
+        title: safeLabel(field(command, 'command'), t.shellCommand),
+        body: `Exit: ${pretty(field(command, 'exit_code'))}\n\n${pretty(field(command, 'output'))}`,
+        meta: t.shellCommand,
+      });
+    }
+
+    for (const edit of asArray(field(raw, 'file_edits'))) {
+      if (!isObject(edit)) continue;
+      blocks.push({
+        kind: 'file',
+        title: safeLabel(field(edit, 'path'), t.fileEdit),
+        body: pretty(field(edit, 'change') ?? edit),
+        meta: t.fileEdit,
+      });
+    }
+
+    for (const error of asArray(field(raw, 'errors'))) {
+      blocks.push({ kind: 'error', title: t.errorRecord, body: pretty(error) });
+    }
+
+    pushIfText(blocks, 'diff', t.gitDiff, field(raw, 'git_diff'));
+  }
+
   const langfuseShapeValue = field(metadata, 'langfuse_shape');
   const langfuseShape = isObject(langfuseShapeValue) ? langfuseShapeValue : null;
   const traceValue = field(langfuseShape, 'trace');
@@ -205,27 +247,43 @@ function extractChatBlocks(raw: JsonValue | null): ChatBlock[] {
     blocks.push({ kind, title, body, meta: safeLabel(field(observation, 'type'), t.observation) });
   }
 
-  for (const key of ['function_calls', 'mcp_calls', 'skill_calls']) {
-    for (const item of asArray(field(raw, key) ?? field(metadata, key))) {
-      blocks.push({
-        kind: key.startsWith('mcp') ? 'mcp' : key.startsWith('skill') ? 'skill' : 'function',
-        title: label(key),
-        body: pretty(item),
-      });
+  if (!hasConversation) {
+    for (const key of ['function_calls', 'mcp_calls', 'skill_calls']) {
+      for (const item of asArray(field(raw, key) ?? field(metadata, key))) {
+        blocks.push({
+          kind: key.startsWith('mcp') ? 'mcp' : key.startsWith('skill') ? 'skill' : 'function',
+          title: label(key),
+          body: pretty(item),
+        });
+      }
     }
   }
 
   return blocks;
 }
 
-function blockIcon(kind: ChatBlockKind) {
-  if (kind === 'user') return <ClipboardList size={16} />;
-  if (kind === 'assistant') return <Bot size={16} />;
-  if (kind === 'thinking') return <Brain size={16} />;
-  if (kind === 'shell') return <Terminal size={16} />;
-  if (kind === 'diff' || kind === 'file') return <Code2 size={16} />;
-  if (kind === 'error') return <AlertTriangle size={16} />;
-  return <Wrench size={16} />;
+function toneClass(value: string | undefined): string {
+  return (value ?? 'unknown').replace(/[^a-z0-9_-]/gi, '-').toLowerCase();
+}
+
+function Badge({ value, type = 'neutral' }: { value: string | undefined; type?: 'status' | 'severity' | 'neutral' }) {
+  return <span className={`badge ${type} ${toneClass(value)}`}>{label(value)}</span>;
+}
+
+function pageSubtitle(tab: string): string {
+  if (tab === 'dashboard') return t.dashboardSubtitle;
+  if (tab === 'cases') return t.casesSubtitle;
+  return t.sessionsSubtitle;
+}
+
+function pageTitle(tab: string): string {
+  if (tab === 'dashboard') return t.dashboard;
+  if (tab === 'cases') return t.cases;
+  return t.sessions;
+}
+
+function isCollapsedByDefault(kind: ChatBlockKind): boolean {
+  return ['tool', 'function', 'mcp', 'skill', 'shell', 'file', 'diff', 'metadata', 'observation'].includes(kind);
 }
 
 function Login({ onLogin }: { onLogin: () => void }) {
@@ -285,6 +343,23 @@ function Dashboard() {
   ] as const;
   return (
     <div className="stack">
+      <section className="missionStrip">
+        <div>
+          <span>{t.evidenceReady}</span>
+          <strong>{summary.open_cases}</strong>
+          <p>{t.openCases}</p>
+        </div>
+        <div>
+          <span>{t.closureRate}</span>
+          <strong>{Math.round(summary.closure_rate * 100)}%</strong>
+          <p>{t.experience}: {summary.experience_count}</p>
+        </div>
+        <div>
+          <span>{t.highRisk}</span>
+          <strong>{summary.high_risk_cases}</strong>
+          <p>{t.totalSessions}: {summary.total_sessions}</p>
+        </div>
+      </section>
       <div className="stats">
         <Stat label={t.totalSessions} value={summary.total_sessions} icon={<Bot size={20} />} />
         <Stat label={t.totalCases} value={summary.total_cases} icon={<ClipboardList size={20} />} />
@@ -309,7 +384,7 @@ function Sessions() {
   return (
     <section className="panel">
       <h2>{t.sessions}</h2>
-      <table><thead><tr><th>{t.agent}</th><th>{t.repository}</th><th>{t.branch}</th><th>{t.summary}</th><th>{t.langfuse}</th></tr></thead><tbody>{sessions.map(s => <tr key={s.id} onClick={() => setSelected(s.id)} className={selected === s.id ? 'selected' : ''}><td>{s.agent_type}</td><td>{s.repository ?? '-'}</td><td>{s.branch ?? '-'}</td><td>{s.summary ?? '-'}</td><td>{s.langfuse_url ? <a href={s.langfuse_url} target="_blank" onClick={e => e.stopPropagation()}>{t.open}</a> : '-'}</td></tr>)}</tbody></table>
+      <table><thead><tr><th>{t.agent}</th><th>{t.repository}</th><th>{t.branch}</th><th>{t.summary}</th><th>{t.langfuse}</th></tr></thead><tbody>{sessions.map(s => <tr key={s.id} onClick={() => setSelected(s.id)} className={selected === s.id ? 'selected' : ''}><td><span className="agentMark">{s.agent_type}</span></td><td>{s.repository ?? '-'}</td><td>{s.branch ?? '-'}</td><td>{s.summary ?? '-'}</td><td>{s.langfuse_url ? <a href={s.langfuse_url} target="_blank" onClick={e => e.stopPropagation()}>{t.open}</a> : '-'}</td></tr>)}</tbody></table>
       {selected && <SessionChatModal sessionId={selected} onClose={() => setSelected(null)} />}
     </section>
   );
@@ -330,22 +405,28 @@ function SessionChatModal({ sessionId, onClose }: { sessionId: string; onClose: 
     <div className="modalOverlay" role="presentation" onMouseDown={onClose}>
       <section className="sessionModal" role="dialog" aria-modal="true" aria-label={t.fullConversation} onMouseDown={e => e.stopPropagation()}>
         <header className="modalHeader">
-          <div>
-            <h2>{t.fullConversation}</h2>
-            <p>{session ? `${session.agent_type} / ${session.repository ?? '-'} / ${session.branch ?? '-'}` : t.loading}</p>
+          <div className="modalHeaderMain">
+            <div className="modalTitleRow">
+              <span>{t.fullConversation}</span>
+              <strong>{session ? session.agent_type : t.loading}</strong>
+              {session?.repository && <em>{session.repository}</em>}
+              {session?.branch && <em>{session.branch}</em>}
+            </div>
+            {session?.summary && <p>{session.summary}</p>}
           </div>
           <button className="iconButton" aria-label={t.closeModal} onClick={onClose}><X size={18} /></button>
         </header>
-        {session?.summary && <p className="modalSummary">{session.summary}</p>}
         <div className="chatTranscript">
           {!raw && <div className="chatBubble system">{t.loading}</div>}
           {blocks.map((block, index) => (
             <article className={`chatMessage ${block.kind}`} key={`${block.kind}-${index}`}>
-              <div className="chatAvatar">{blockIcon(block.kind)}</div>
-              <div className="chatBubble">
-                <div className="chatTitle"><strong>{block.title}</strong>{block.meta && <span>{block.meta}</span>}</div>
+              <details className="chatBubble" open={!isCollapsedByDefault(block.kind)}>
+                <summary className="chatTitle">
+                  <span className="chatKind"><strong>{block.title}</strong></span>
+                  {block.meta && <span>{block.meta}</span>}
+                </summary>
                 <pre>{block.body}</pre>
-              </div>
+              </details>
             </article>
           ))}
         </div>
@@ -361,14 +442,83 @@ function SessionChatModal({ sessionId, onClose }: { sessionId: string; onClose: 
 function Cases() {
   const [cases, setCases] = useState<Case[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
+  const [createOpen, setCreateOpen] = useState(false);
   const load = () => request<Case[]>('/cases').then(setCases);
   useEffect(() => {
     void load();
   }, []);
+  async function created(caseId: string) {
+    await load();
+    setSelected(caseId);
+    setCreateOpen(false);
+  }
   return (
     <div className="split">
-      <section className="panel"><h2>{t.cases}</h2><table><thead><tr><th>{t.title}</th><th>{t.status}</th><th>{t.severity}</th><th>{t.type}</th><th>{t.ai}</th></tr></thead><tbody>{cases.map(c => <tr key={c.id} onClick={() => setSelected(c.id)} className={selected === c.id ? 'selected' : ''}><td>{c.title}</td><td>{label(c.status)}</td><td>{label(c.severity)}</td><td>{label(c.problem_type)}</td><td>{label(c.ai_analysis_status)}</td></tr>)}</tbody></table></section>
+      <section className="panel">
+        <div className="panelHeader"><h2>{t.cases}</h2><button onClick={() => setCreateOpen(true)}><Upload size={16} /> {t.createCase}</button></div>
+        <table><thead><tr><th>{t.title}</th><th>{t.status}</th><th>{t.severity}</th><th>{t.type}</th><th>{t.ai}</th></tr></thead><tbody>{cases.map(c => <tr key={c.id} onClick={() => setSelected(c.id)} className={selected === c.id ? 'selected' : ''}><td><strong className="caseTitle">{c.title}</strong></td><td><Badge value={c.status} type="status" /></td><td><Badge value={c.severity} type="severity" /></td><td>{label(c.problem_type)}</td><td><Badge value={c.ai_analysis_status} /></td></tr>)}</tbody></table>
+        {createOpen && <CreateCaseModal onClose={() => setCreateOpen(false)} onCreated={created} />}
+      </section>
       <CaseDetailPanel caseId={selected} onChanged={load} />
+    </div>
+  );
+}
+
+function CreateCaseModal({ onClose, onCreated }: { onClose: () => void; onCreated: (caseId: string) => Promise<void> }) {
+  const [title, setTitle] = useState('');
+  const [file, setFile] = useState<File | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState('');
+  async function submit(e: SyntheticEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setError('');
+    if (!file) {
+      setError(t.sessionRecordRequired);
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const formData = new FormData();
+      formData.set('file', file);
+      const session = await requestForm<Session>('/sessions/upload/claude-jsonl', formData);
+      const normalizedTitle = title.trim();
+      const created = await request<Case>('/cases', {
+        method: 'POST',
+        body: JSON.stringify({
+          title: normalizedTitle.length > 0 ? normalizedTitle : (session.summary ?? file.name),
+          session_id: session.id,
+          source: 'offline_log_import',
+          severity: 'medium',
+          problem_type: 'other',
+        }),
+      });
+      await onCreated(created.id);
+    } catch {
+      setError(t.createCaseFailed);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+  return (
+    <div className="modalOverlay" role="presentation" onMouseDown={onClose}>
+      <form className="caseCreateModal" onSubmit={submit} onMouseDown={e => e.stopPropagation()}>
+        <header className="modalHeader">
+          <div className="modalHeaderMain">
+            <div className="modalTitleRow"><span>{t.createCaseTitle}</span><strong>{t.claudeCodeJsonl}</strong></div>
+          </div>
+          <button className="iconButton" type="button" aria-label={t.closeModal} onClick={onClose}><X size={18} /></button>
+        </header>
+        <div className="caseCreateBody">
+          <label>{t.title}<input value={title} onChange={e => setTitle(e.target.value)} placeholder={t.caseTitlePlaceholder} /></label>
+          <label>{t.sessionFormat}<select defaultValue="claude-jsonl"><option value="claude-jsonl">{t.claudeCodeJsonl}</option></select></label>
+          <label>{t.sessionRecordFile}<input type="file" accept=".jsonl,application/jsonl,text/plain" required onChange={e => setFile(e.target.files?.[0] ?? null)} /></label>
+          {error && <div className="error">{error}</div>}
+        </div>
+        <footer className="modalFooter">
+          <button type="button" onClick={onClose}>{t.close}</button>
+          <button disabled={submitting}>{submitting ? t.loading : t.uploadAndCreate}</button>
+        </footer>
+      </form>
     </div>
   );
 }
@@ -402,7 +552,7 @@ function CaseDetailPanel({ caseId, onChanged }: { caseId: string | null; onChang
   return (
     <section className="panel detail">
       <h2>{detail.title}</h2>
-      <div className="chips"><span>{label(detail.status)}</span><span>{label(detail.severity)}</span><span>{label(detail.problem_type)}</span></div>
+      <div className="chips"><Badge value={detail.status} type="status" /><Badge value={detail.severity} type="severity" /><Badge value={detail.problem_type} /></div>
       {detail.session?.langfuse_url && <a href={detail.session.langfuse_url} target="_blank">{t.openLangfuseTrace}</a>}
       {detail.session_id && <button onClick={() => setChatSessionId(detail.session_id ?? null)}>{t.showRawSession}</button>}
       {chatSessionId && <SessionChatModal sessionId={chatSessionId} onClose={() => setChatSessionId(null)} />}
@@ -436,15 +586,27 @@ function App() {
   return (
     <main className="app">
       <aside>
-        <h1>HarnessQuest</h1>
+        <div className="brandBlock">
+          <h1>HarnessQuest</h1>
+          <span>{t.workspaceKicker}</span>
+        </div>
         <button className={tab === 'dashboard' ? 'active' : ''} onClick={() => setTab('dashboard')}><BarChart3 size={18} /> {t.dashboard}</button>
         <button className={tab === 'cases' ? 'active' : ''} onClick={() => setTab('cases')}><ClipboardList size={18} /> {t.cases}</button>
         <button className={tab === 'sessions' ? 'active' : ''} onClick={() => setTab('sessions')}><Bot size={18} /> {t.sessions}</button>
         <div className="spacer" />
-        <p>{user?.display_name}</p>
+        <p><span>{t.activeOperator}</span>{user?.display_name}</p>
         <button onClick={() => { localStorage.removeItem('hq_token'); setToken(null); }}><LogOut size={18} /> {t.logout}</button>
       </aside>
-      <section className="content">{content}</section>
+      <section className="content">
+        <header className="workspaceHeader">
+          <div>
+            <p>{t.workspaceKicker}</p>
+            <h2>{pageTitle(tab)}</h2>
+          </div>
+          <span>{pageSubtitle(tab)}</span>
+        </header>
+        {content}
+      </section>
     </main>
   );
 }
