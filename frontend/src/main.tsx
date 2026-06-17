@@ -263,20 +263,20 @@ function extractChatBlocks(raw: JsonValue | null): ChatBlock[] {
   const langfuseShapeValue = field(metadata, 'langfuse_shape');
   const langfuseShape = isObject(langfuseShapeValue) ? langfuseShapeValue : null;
 
-  for (const observation of asArray(field(langfuseShape, 'observations'))) {
-    if (!isObject(observation)) continue;
-    const kind = observationKind(observation);
-    const title = safeLabel(field(observation, 'name'), safeLabel(field(observation, 'type'), t.observation));
-    const statusMessage = text(field(observation, 'statusMessage'));
-    const body = [
-      statusMessage ? `Status:\n${statusMessage}` : null,
-      `Input:\n${pretty(field(observation, 'input'))}`,
-      `Output:\n${pretty(field(observation, 'output'))}`,
-    ].filter(Boolean).join('\n\n');
-    blocks.push({ kind, title, body, meta: safeLabel(field(observation, 'type'), t.observation) });
-  }
-
   if (!hasConversation) {
+    for (const observation of asArray(field(langfuseShape, 'observations'))) {
+      if (!isObject(observation)) continue;
+      const kind = observationKind(observation);
+      const title = safeLabel(field(observation, 'name'), safeLabel(field(observation, 'type'), t.observation));
+      const statusMessage = text(field(observation, 'statusMessage'));
+      const body = [
+        statusMessage ? `Status:\n${statusMessage}` : null,
+        `Input:\n${pretty(field(observation, 'input'))}`,
+        `Output:\n${pretty(field(observation, 'output'))}`,
+      ].filter(Boolean).join('\n\n');
+      blocks.push({ kind, title, body, meta: safeLabel(field(observation, 'type'), t.observation) });
+    }
+
     for (const key of ['function_calls', 'mcp_calls', 'skill_calls']) {
       for (const item of asArray(field(raw, key) ?? field(metadata, key))) {
         blocks.push({
