@@ -555,8 +555,8 @@ tbody tr.selected {
 .caseInfoGrid label:first-child,
 .caseInfoGrid label:nth-child(2),
 .caseInfoGrid label:nth-child(3),
-.caseInfoGrid label:nth-child(7),
-.caseInfoGrid label:nth-child(8) {
+.caseInfoGrid label:nth-child(9),
+.caseInfoGrid label:nth-child(10) {
   grid-column: 1 / -1;
 }
 

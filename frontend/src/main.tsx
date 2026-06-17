@@ -54,6 +54,19 @@ type JsonValue = null | boolean | number | string | JsonValue[] | JsonObject;
 type JsonObject = { [key in string]: JsonValue };
 type ChatBlockKind = 'user' | 'assistant' | 'thinking' | 'tool' | 'function' | 'mcp' | 'skill' | 'shell' | 'file' | 'error' | 'diff' | 'observation' | 'metadata';
 type ChatBlock = { kind: ChatBlockKind; title: string; body: string; meta?: string };
+const CASE_SEVERITIES = ['low', 'medium', 'high', 'critical'] as const;
+const CASE_PROBLEM_TYPES = [
+  'incorrect_model_answer',
+  'insufficient_context',
+  'tool_call_failure',
+  'command_execution_failure',
+  'risky_code_change',
+  'requirement_misunderstanding',
+  'cost_or_latency_anomaly',
+  'permission_or_security_issue',
+  'user_workflow_issue',
+  'other',
+] as const;
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const token = localStorage.getItem('hq_token');
@@ -678,6 +691,8 @@ function CreateCaseModal({ onClose, onCreated }: { onClose: () => void; onCreate
   const [actualResult, setActualResult] = useState('');
   const [reproducible, setReproducible] = useState('');
   const [responsibleOwner, setResponsibleOwner] = useState('');
+  const [severity, setSeverity] = useState('medium');
+  const [problemType, setProblemType] = useState('other');
   const [tags, setTags] = useState('');
   const [file, setFile] = useState<File | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -701,8 +716,8 @@ function CreateCaseModal({ onClose, onCreated }: { onClose: () => void; onCreate
           title: normalizedTitle.length > 0 ? normalizedTitle : (session.summary ?? file.name),
           session_id: session.id,
           source: 'offline_log_import',
-          severity: 'medium',
-          problem_type: 'other',
+          severity,
+          problem_type: problemType,
           scene_description: sceneDescription || null,
           expected_result: expectedResult || null,
           actual_result: actualResult || null,
@@ -732,6 +747,8 @@ function CreateCaseModal({ onClose, onCreated }: { onClose: () => void; onCreate
           <label>{t.sceneDescription}<textarea value={sceneDescription} onChange={e => setSceneDescription(e.target.value)} /></label>
           <label>{t.expectedResult}<textarea value={expectedResult} onChange={e => setExpectedResult(e.target.value)} /></label>
           <label>{t.actualResult}<textarea value={actualResult} onChange={e => setActualResult(e.target.value)} /></label>
+          <label>{t.severity}<select value={severity} onChange={e => setSeverity(e.target.value)}>{CASE_SEVERITIES.map(item => <option key={item} value={item}>{label(item)}</option>)}</select></label>
+          <label>{t.problemType}<select value={problemType} onChange={e => setProblemType(e.target.value)}>{CASE_PROBLEM_TYPES.map(item => <option key={item} value={item}>{label(item)}</option>)}</select></label>
           <label>{t.reproducible}<select value={reproducible} onChange={e => setReproducible(e.target.value)}><option value="">{t.reproducibleUnknown}</option><option value="true">{t.reproducibleYes}</option><option value="false">{t.reproducibleNo}</option></select></label>
           <label>{t.responsibleOwner}<input value={responsibleOwner} onChange={e => setResponsibleOwner(e.target.value)} /></label>
           <label>{t.tags}<input value={tags} onChange={e => setTags(e.target.value)} placeholder={t.tagsPlaceholder} /></label>
@@ -756,6 +773,8 @@ function CaseDetailPanel({ caseId, onChanged }: { caseId: string | null; onChang
     scene_description: '',
     expected_result: '',
     actual_result: '',
+    severity: 'medium',
+    problem_type: 'other',
     reproducible: '',
     responsible_owner: '',
     tags: '',
@@ -778,6 +797,8 @@ function CaseDetailPanel({ caseId, onChanged }: { caseId: string | null; onChang
       scene_description: detail.scene_description ?? '',
       expected_result: detail.expected_result ?? '',
       actual_result: detail.actual_result ?? '',
+      severity: detail.severity,
+      problem_type: detail.problem_type,
       reproducible: detail.reproducible === null || detail.reproducible === undefined ? '' : String(detail.reproducible),
       responsible_owner: detail.responsible_owner ?? '',
       tags: (detail.tags ?? []).join(', '),
@@ -811,6 +832,8 @@ function CaseDetailPanel({ caseId, onChanged }: { caseId: string | null; onChang
           scene_description: caseForm.scene_description || null,
           expected_result: caseForm.expected_result || null,
           actual_result: caseForm.actual_result || null,
+          severity: caseForm.severity,
+          problem_type: caseForm.problem_type,
           reproducible: caseForm.reproducible === '' ? null : caseForm.reproducible === 'true',
           responsible_owner: caseForm.responsible_owner || null,
           tags: parseTags(caseForm.tags),
@@ -837,6 +860,8 @@ function CaseDetailPanel({ caseId, onChanged }: { caseId: string | null; onChang
         <label>{t.sceneDescription}<textarea value={caseForm.scene_description} onChange={e => updateCaseForm('scene_description', e.target.value)} /></label>
         <label>{t.expectedResult}<textarea value={caseForm.expected_result} onChange={e => updateCaseForm('expected_result', e.target.value)} /></label>
         <label>{t.actualResult}<textarea value={caseForm.actual_result} onChange={e => updateCaseForm('actual_result', e.target.value)} /></label>
+        <label>{t.severity}<select value={caseForm.severity} onChange={e => updateCaseForm('severity', e.target.value)}>{CASE_SEVERITIES.map(item => <option key={item} value={item}>{label(item)}</option>)}</select></label>
+        <label>{t.problemType}<select value={caseForm.problem_type} onChange={e => updateCaseForm('problem_type', e.target.value)}>{CASE_PROBLEM_TYPES.map(item => <option key={item} value={item}>{label(item)}</option>)}</select></label>
         <label>{t.reproducible}<select value={caseForm.reproducible} onChange={e => updateCaseForm('reproducible', e.target.value)}><option value="">{t.reproducibleUnknown}</option><option value="true">{t.reproducibleYes}</option><option value="false">{t.reproducibleNo}</option></select></label>
         <label>{t.responsibleOwner}<input value={caseForm.responsible_owner} onChange={e => updateCaseForm('responsible_owner', e.target.value)} /></label>
         <label>{t.tags}<input value={caseForm.tags} onChange={e => updateCaseForm('tags', e.target.value)} placeholder={t.tagsPlaceholder} /></label>
