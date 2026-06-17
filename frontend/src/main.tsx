@@ -399,6 +399,18 @@ function pageTitle(tab: string): string {
   return t.sessions;
 }
 
+const TABS = ['dashboard', 'cases', 'sessions'] as const;
+type Tab = (typeof TABS)[number];
+
+function normalizeTab(value: string | null | undefined): Tab {
+  const candidate = (value ?? '').replace(/^#/, '');
+  return TABS.includes(candidate as Tab) ? (candidate as Tab) : 'dashboard';
+}
+
+function currentHashTab(): Tab {
+  return normalizeTab(window.location.hash);
+}
+
 function isCollapsedByDefault(kind: ChatBlockKind): boolean {
   return ['tool', 'function', 'mcp', 'skill', 'shell', 'file', 'diff', 'metadata', 'observation'].includes(kind);
 }
@@ -837,13 +849,25 @@ function CaseDetailPanel({ caseId, onChanged }: { caseId: string | null; onChang
 
 function App() {
   const [token, setToken] = useState(localStorage.getItem('hq_token'));
-  const [tab, setTab] = useState('dashboard');
+  const [tab, setTab] = useState<Tab>(currentHashTab);
   const [user, setUser] = useState<User | null>(null);
   useEffect(() => {
     if (token) {
       void request<User>('/auth/me').then(setUser).catch(() => { localStorage.removeItem('hq_token'); setToken(null); });
     }
   }, [token]);
+  useEffect(() => {
+    const onHashChange = () => setTab(currentHashTab());
+    window.addEventListener('hashchange', onHashChange);
+    return () => window.removeEventListener('hashchange', onHashChange);
+  }, []);
+  function navigate(nextTab: Tab) {
+    if (window.location.hash === `#${nextTab}`) {
+      setTab(nextTab);
+      return;
+    }
+    window.location.hash = nextTab;
+  }
   if (!token) return <Login onLogin={() => setToken(localStorage.getItem('hq_token'))} />;
   const content = tab === 'dashboard' ? <Dashboard /> : tab === 'sessions' ? <Sessions /> : <Cases />;
   return (
@@ -853,9 +877,9 @@ function App() {
           <h1>HarnessQuest</h1>
           <span>{t.workspaceKicker}</span>
         </div>
-        <button className={tab === 'dashboard' ? 'active' : ''} onClick={() => setTab('dashboard')}><BarChart3 size={18} /> {t.dashboard}</button>
-        <button className={tab === 'cases' ? 'active' : ''} onClick={() => setTab('cases')}><ClipboardList size={18} /> {t.cases}</button>
-        <button className={tab === 'sessions' ? 'active' : ''} onClick={() => setTab('sessions')}><Bot size={18} /> {t.sessions}</button>
+        <button className={tab === 'dashboard' ? 'active' : ''} onClick={() => navigate('dashboard')}><BarChart3 size={18} /> {t.dashboard}</button>
+        <button className={tab === 'cases' ? 'active' : ''} onClick={() => navigate('cases')}><ClipboardList size={18} /> {t.cases}</button>
+        <button className={tab === 'sessions' ? 'active' : ''} onClick={() => navigate('sessions')}><Bot size={18} /> {t.sessions}</button>
         <div className="spacer" />
         <p><span>{t.activeOperator}</span>{user?.display_name}</p>
         <button onClick={() => { localStorage.removeItem('hq_token'); setToken(null); }}><LogOut size={18} /> {t.logout}</button>
