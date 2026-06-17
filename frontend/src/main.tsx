@@ -311,6 +311,23 @@ function selectedProblemTypeValue(value: string): string {
   return PRESET_PROBLEM_TYPE_SET.has(value) ? value : CUSTOM_PROBLEM_TYPE;
 }
 
+function relativeTime(value: string): string {
+  const timestamp = new Date(value).getTime();
+  if (Number.isNaN(timestamp)) return '-';
+  const seconds = Math.max(0, Math.floor((Date.now() - timestamp) / 1000));
+  if (seconds < 60) return t.justNow;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return t.minutesAgo.replace('{count}', String(minutes));
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return t.hoursAgo.replace('{count}', String(hours));
+  const days = Math.floor(hours / 24);
+  if (days < 30) return t.daysAgo.replace('{count}', String(days));
+  const months = Math.floor(days / 30);
+  if (months < 12) return t.monthsAgo.replace('{count}', String(months));
+  const years = Math.floor(days / 365);
+  return t.yearsAgo.replace('{count}', String(years));
+}
+
 function formatDateTimeFilter(value: string, endOfDay = false): string | null {
   if (!value) return null;
   return new Date(`${value}T${endOfDay ? '23:59:59' : '00:00:00'}`).toISOString();
@@ -694,7 +711,7 @@ function Cases({ selectedCaseId, onSelectCase }: { selectedCaseId: string | null
             </div>
           )}
         </div>
-        <table><thead><tr><th>{t.title}</th><th>{t.status}</th><th>{t.severity}</th><th>{t.type}</th><th>{t.tags}</th><th>{t.ai}</th></tr></thead><tbody>{visibleCases.map(c => <tr key={c.id} onClick={() => onSelectCase(c.id)} className={selectedCaseId === c.id ? 'selected' : ''}><td><strong className="caseTitle">{c.title}</strong></td><td><Badge value={c.status} type="status" /></td><td><Badge value={c.severity} type="severity" /></td><td>{label(c.problem_type)}</td><td><div className="tagList">{(c.tags ?? []).map(item => <span key={item}>{item}</span>)}</div></td><td><Badge value={c.ai_analysis_status} /></td></tr>)}</tbody></table>
+        <table><thead><tr><th>{t.title}</th><th>{t.createdAt}</th><th>{t.status}</th><th>{t.severity}</th><th>{t.type}</th><th>{t.tags}</th><th>{t.ai}</th></tr></thead><tbody>{visibleCases.map(c => <tr key={c.id} onClick={() => onSelectCase(c.id)} className={selectedCaseId === c.id ? 'selected' : ''}><td><strong className="caseTitle">{c.title}</strong></td><td><span className="relativeTime">{relativeTime(c.created_at)}</span></td><td><Badge value={c.status} type="status" /></td><td><Badge value={c.severity} type="severity" /></td><td>{label(c.problem_type)}</td><td><div className="tagList">{(c.tags ?? []).map(item => <span key={item}>{item}</span>)}</div></td><td><Badge value={c.ai_analysis_status} /></td></tr>)}</tbody></table>
         <div className="paginationBar">
           <span>{t.pageSummary.replace('{page}', String(page)).replace('{pages}', String(pageCount)).replace('{total}', String(cases.length))}</span>
           <div>

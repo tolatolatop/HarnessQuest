@@ -439,6 +439,16 @@ tbody tr.selected {
   table-layout: fixed;
 }
 
+.caseListPanel th:nth-child(1),
+.caseListPanel td:nth-child(1) {
+  width: 40em;
+}
+
+.caseListPanel th:nth-child(5),
+.caseListPanel td:nth-child(5) {
+  width: 14em;
+}
+
 .caseListPanel td,
 .caseListPanel th {
   overflow: hidden;
@@ -451,6 +461,14 @@ tbody tr.selected {
   font-weight: 750;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.relativeTime {
+  color: #626a62;
+  display: inline-block;
+  font-size: 13px;
+  font-weight: 750;
   white-space: nowrap;
 }
 
