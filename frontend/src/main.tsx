@@ -402,13 +402,20 @@ function pageTitle(tab: string): string {
 const TABS = ['dashboard', 'cases', 'sessions'] as const;
 type Tab = (typeof TABS)[number];
 
-function normalizeTab(value: string | null | undefined): Tab {
-  const candidate = (value ?? '').replace(/^#/, '');
-  return TABS.includes(candidate as Tab) ? (candidate as Tab) : 'dashboard';
+type RouteState = { tab: Tab; caseId: string | null };
+
+function parseHash(value: string | null | undefined): RouteState {
+  const [rawTab, rawId] = (value ?? '').replace(/^#/, '').split('/');
+  const tab = TABS.includes(rawTab as Tab) ? (rawTab as Tab) : 'dashboard';
+  return { tab, caseId: tab === 'cases' && rawId ? decodeURIComponent(rawId) : null };
 }
 
-function currentHashTab(): Tab {
-  return normalizeTab(window.location.hash);
+function currentRoute(): RouteState {
+  return parseHash(window.location.hash);
+}
+
+function routeHash(tab: Tab, caseId: string | null = null): string {
+  return tab === 'cases' && caseId ? `#cases/${encodeURIComponent(caseId)}` : `#${tab}`;
 }
 
 function isCollapsedByDefault(kind: ChatBlockKind): boolean {
@@ -568,9 +575,8 @@ function SessionChatModal({ sessionId, onClose }: { sessionId: string; onClose: 
   );
 }
 
-function Cases() {
+function Cases({ selectedCaseId, onSelectCase }: { selectedCaseId: string | null; onSelectCase: (caseId: string | null) => void }) {
   const [cases, setCases] = useState<Case[]>([]);
-  const [selected, setSelected] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [suggestionsOpen, setSuggestionsOpen] = useState(false);
@@ -601,10 +607,17 @@ function Cases() {
   useEffect(() => {
     setPage(current => Math.min(current, pageCount));
   }, [pageCount]);
+  useEffect(() => {
+    if (!selectedCaseId) return;
+    const index = cases.findIndex(item => item.id === selectedCaseId);
+    if (index >= 0) {
+      setPage(Math.floor(index / pageSize) + 1);
+    }
+  }, [cases, selectedCaseId]);
   async function created(caseId: string) {
     await load();
     setPage(1);
-    setSelected(caseId);
+    onSelectCase(caseId);
     setCreateOpen(false);
   }
   const knownTags = Array.from(new Set(cases.flatMap(item => item.tags ?? []))).slice(0, 6);
@@ -643,7 +656,7 @@ function Cases() {
             </div>
           )}
         </div>
-        <table><thead><tr><th>{t.title}</th><th>{t.status}</th><th>{t.severity}</th><th>{t.type}</th><th>{t.tags}</th><th>{t.ai}</th></tr></thead><tbody>{visibleCases.map(c => <tr key={c.id} onClick={() => setSelected(c.id)} className={selected === c.id ? 'selected' : ''}><td><strong className="caseTitle">{c.title}</strong></td><td><Badge value={c.status} type="status" /></td><td><Badge value={c.severity} type="severity" /></td><td>{label(c.problem_type)}</td><td><div className="tagList">{(c.tags ?? []).map(item => <span key={item}>{item}</span>)}</div></td><td><Badge value={c.ai_analysis_status} /></td></tr>)}</tbody></table>
+        <table><thead><tr><th>{t.title}</th><th>{t.status}</th><th>{t.severity}</th><th>{t.type}</th><th>{t.tags}</th><th>{t.ai}</th></tr></thead><tbody>{visibleCases.map(c => <tr key={c.id} onClick={() => onSelectCase(c.id)} className={selectedCaseId === c.id ? 'selected' : ''}><td><strong className="caseTitle">{c.title}</strong></td><td><Badge value={c.status} type="status" /></td><td><Badge value={c.severity} type="severity" /></td><td>{label(c.problem_type)}</td><td><div className="tagList">{(c.tags ?? []).map(item => <span key={item}>{item}</span>)}</div></td><td><Badge value={c.ai_analysis_status} /></td></tr>)}</tbody></table>
         <div className="paginationBar">
           <span>{t.pageSummary.replace('{page}', String(page)).replace('{pages}', String(pageCount)).replace('{total}', String(cases.length))}</span>
           <div>
@@ -653,7 +666,7 @@ function Cases() {
         </div>
         {createOpen && <CreateCaseModal onClose={() => setCreateOpen(false)} onCreated={created} />}
       </section>
-      <CaseDetailPanel caseId={selected} onChanged={load} />
+      <CaseDetailPanel caseId={selectedCaseId} onChanged={load} />
     </div>
   );
 }
@@ -849,27 +862,29 @@ function CaseDetailPanel({ caseId, onChanged }: { caseId: string | null; onChang
 
 function App() {
   const [token, setToken] = useState(localStorage.getItem('hq_token'));
-  const [tab, setTab] = useState<Tab>(currentHashTab);
+  const [route, setRoute] = useState<RouteState>(currentRoute);
   const [user, setUser] = useState<User | null>(null);
+  const tab = route.tab;
   useEffect(() => {
     if (token) {
       void request<User>('/auth/me').then(setUser).catch(() => { localStorage.removeItem('hq_token'); setToken(null); });
     }
   }, [token]);
   useEffect(() => {
-    const onHashChange = () => setTab(currentHashTab());
+    const onHashChange = () => setRoute(currentRoute());
     window.addEventListener('hashchange', onHashChange);
     return () => window.removeEventListener('hashchange', onHashChange);
   }, []);
-  function navigate(nextTab: Tab) {
-    if (window.location.hash === `#${nextTab}`) {
-      setTab(nextTab);
+  function navigate(nextTab: Tab, caseId: string | null = null) {
+    const nextHash = routeHash(nextTab, caseId);
+    if (window.location.hash === nextHash) {
+      setRoute({ tab: nextTab, caseId: nextTab === 'cases' ? caseId : null });
       return;
     }
-    window.location.hash = nextTab;
+    window.location.hash = nextHash;
   }
   if (!token) return <Login onLogin={() => setToken(localStorage.getItem('hq_token'))} />;
-  const content = tab === 'dashboard' ? <Dashboard /> : tab === 'sessions' ? <Sessions /> : <Cases />;
+  const content = tab === 'dashboard' ? <Dashboard /> : tab === 'sessions' ? <Sessions /> : <Cases selectedCaseId={route.caseId} onSelectCase={caseId => navigate('cases', caseId)} />;
   return (
     <main className="app">
       <aside>
