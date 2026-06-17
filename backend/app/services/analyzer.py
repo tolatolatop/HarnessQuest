@@ -53,7 +53,7 @@ def _perform_analysis(db: Session, case: AgentCase) -> AIAnalysis:
             "source": case.source.value,
             "status": case.status.value,
             "severity": case.severity.value,
-            "problem_type": case.problem_type.value,
+            "problem_type": case.problem_type,
             "human_conclusion": case.human_conclusion,
             "handling_action": case.handling_action,
         },

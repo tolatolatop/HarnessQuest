@@ -68,6 +68,8 @@ const CASE_PROBLEM_TYPES = [
   'user_workflow_issue',
   'other',
 ] as const;
+const CUSTOM_PROBLEM_TYPE = '__custom_problem_type__';
+const PRESET_PROBLEM_TYPE_SET = new Set<string>(CASE_PROBLEM_TYPES);
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const token = localStorage.getItem('hq_token');
@@ -309,6 +311,14 @@ function Badge({ value, type = 'neutral' }: { value: string | undefined; type?: 
 
 function parseTags(value: string): string[] {
   return Array.from(new Set(value.split(/[,\s，]+/).map(item => item.trim()).filter(Boolean)));
+}
+
+function problemTypeOptions(knownProblemTypes: string[] = []): string[] {
+  return Array.from(new Set([...CASE_PROBLEM_TYPES, ...knownProblemTypes.filter(item => item && !PRESET_PROBLEM_TYPE_SET.has(item))]));
+}
+
+function selectedProblemTypeValue(value: string): string {
+  return PRESET_PROBLEM_TYPE_SET.has(value) ? value : CUSTOM_PROBLEM_TYPE;
 }
 
 function formatDateTimeFilter(value: string, endOfDay = false): string | null {
@@ -684,14 +694,14 @@ function Cases({ selectedCaseId, onSelectCase }: { selectedCaseId: string | null
             <button className="iconButton" aria-label={t.nextPage} disabled={page >= pageCount} onClick={() => setPage(current => Math.min(pageCount, current + 1))}><ChevronRight size={16} /></button>
           </div>
         </div>
-        {createOpen && <CreateCaseModal onClose={() => setCreateOpen(false)} onCreated={created} />}
+        {createOpen && <CreateCaseModal knownProblemTypes={cases.map(item => item.problem_type)} onClose={() => setCreateOpen(false)} onCreated={created} />}
       </section>
-      <CaseDetailPanel caseId={selectedCaseId} onChanged={load} />
+      <CaseDetailPanel caseId={selectedCaseId} knownProblemTypes={cases.map(item => item.problem_type)} onChanged={load} />
     </div>
   );
 }
 
-function CreateCaseModal({ onClose, onCreated }: { onClose: () => void; onCreated: (caseId: string) => Promise<void> }) {
+function CreateCaseModal({ knownProblemTypes, onClose, onCreated }: { knownProblemTypes: string[]; onClose: () => void; onCreated: (caseId: string) => Promise<void> }) {
   const [title, setTitle] = useState('');
   const [sceneDescription, setSceneDescription] = useState('');
   const [expectedResult, setExpectedResult] = useState('');
@@ -701,6 +711,7 @@ function CreateCaseModal({ onClose, onCreated }: { onClose: () => void; onCreate
   const [responsibleOwner, setResponsibleOwner] = useState('');
   const [severity, setSeverity] = useState('medium');
   const [problemType, setProblemType] = useState('other');
+  const [customProblemType, setCustomProblemType] = useState('');
   const [tags, setTags] = useState('');
   const [file, setFile] = useState<File | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -718,6 +729,7 @@ function CreateCaseModal({ onClose, onCreated }: { onClose: () => void; onCreate
       formData.set('file', file);
       const session = await requestForm<Session>('/sessions/upload/auto', formData);
       const normalizedTitle = title.trim();
+      const normalizedProblemType = problemType === CUSTOM_PROBLEM_TYPE ? customProblemType.trim() : problemType;
       const created = await request<Case>('/cases', {
         method: 'POST',
         body: JSON.stringify({
@@ -725,7 +737,7 @@ function CreateCaseModal({ onClose, onCreated }: { onClose: () => void; onCreate
           session_id: session.id,
           source: 'offline_log_import',
           severity,
-          problem_type: problemType,
+          problem_type: normalizedProblemType || 'other',
           scene_description: sceneDescription || null,
           expected_result: expectedResult || null,
           actual_result: actualResult || null,
@@ -757,7 +769,8 @@ function CreateCaseModal({ onClose, onCreated }: { onClose: () => void; onCreate
           <label>{t.expectedResult}<textarea value={expectedResult} onChange={e => setExpectedResult(e.target.value)} /></label>
           <label>{t.actualResult}<textarea value={actualResult} onChange={e => setActualResult(e.target.value)} /></label>
           <label>{t.severity}<select value={severity} onChange={e => setSeverity(e.target.value)}>{CASE_SEVERITIES.map(item => <option key={item} value={item}>{label(item)}</option>)}</select></label>
-          <label>{t.problemType}<select value={problemType} onChange={e => setProblemType(e.target.value)}>{CASE_PROBLEM_TYPES.map(item => <option key={item} value={item}>{label(item)}</option>)}</select></label>
+          <label>{t.problemType}<select value={problemType} onChange={e => setProblemType(e.target.value)}>{problemTypeOptions(knownProblemTypes).map(item => <option key={item} value={item}>{label(item)}</option>)}<option value={CUSTOM_PROBLEM_TYPE}>{t.customProblemType}</option></select></label>
+          {problemType === CUSTOM_PROBLEM_TYPE && <label>{t.customProblemType}<input value={customProblemType} onChange={e => setCustomProblemType(e.target.value)} placeholder={t.customProblemTypePlaceholder} maxLength={128} /></label>}
           <label>{t.reproducible}<select value={reproducible} onChange={e => setReproducible(e.target.value)}><option value="">{t.reproducibleUnknown}</option><option value="true">{t.reproducibleYes}</option><option value="false">{t.reproducibleNo}</option></select></label>
           <label>{t.feedbackReporter}<input value={feedbackReporter} onChange={e => setFeedbackReporter(e.target.value)} /></label>
           <label>{t.responsibleOwner}<input value={responsibleOwner} onChange={e => setResponsibleOwner(e.target.value)} /></label>
@@ -774,7 +787,7 @@ function CreateCaseModal({ onClose, onCreated }: { onClose: () => void; onCreate
   );
 }
 
-function CaseDetailPanel({ caseId, onChanged }: { caseId: string | null; onChanged: () => void }) {
+function CaseDetailPanel({ caseId, knownProblemTypes, onChanged }: { caseId: string | null; knownProblemTypes: string[]; onChanged: () => void }) {
   const [detail, setDetail] = useState<CaseDetail | null>(null);
   const [chatSessionId, setChatSessionId] = useState<string | null>(null);
   const [comment, setComment] = useState('');
@@ -864,6 +877,7 @@ function CaseDetailPanel({ caseId, onChanged }: { caseId: string | null; onChang
   async function saveCaseInfo() {
     setCaseInfoMessage('');
     try {
+      const normalizedProblemType = caseForm.problem_type.trim() || 'other';
       await request(`/cases/${caseId}`, {
         method: 'PATCH',
         body: JSON.stringify({
@@ -871,7 +885,7 @@ function CaseDetailPanel({ caseId, onChanged }: { caseId: string | null; onChang
           expected_result: caseForm.expected_result || null,
           actual_result: caseForm.actual_result || null,
           severity: caseForm.severity,
-          problem_type: caseForm.problem_type,
+          problem_type: normalizedProblemType,
           reproducible: caseForm.reproducible === '' ? null : caseForm.reproducible === 'true',
           feedback_reporter: caseForm.feedback_reporter || null,
           responsible_owner: caseForm.responsible_owner || null,
@@ -900,7 +914,8 @@ function CaseDetailPanel({ caseId, onChanged }: { caseId: string | null; onChang
         <label>{t.expectedResult}<textarea value={caseForm.expected_result} onChange={e => updateCaseForm('expected_result', e.target.value)} /></label>
         <label>{t.actualResult}<textarea value={caseForm.actual_result} onChange={e => updateCaseForm('actual_result', e.target.value)} /></label>
         <label>{t.severity}<select value={caseForm.severity} onChange={e => updateCaseForm('severity', e.target.value)}>{CASE_SEVERITIES.map(item => <option key={item} value={item}>{label(item)}</option>)}</select></label>
-        <label>{t.problemType}<select value={caseForm.problem_type} onChange={e => updateCaseForm('problem_type', e.target.value)}>{CASE_PROBLEM_TYPES.map(item => <option key={item} value={item}>{label(item)}</option>)}</select></label>
+        <label>{t.problemType}<select value={selectedProblemTypeValue(caseForm.problem_type)} onChange={e => updateCaseForm('problem_type', e.target.value === CUSTOM_PROBLEM_TYPE ? '' : e.target.value)}>{problemTypeOptions([...knownProblemTypes, detail.problem_type]).map(item => <option key={item} value={item}>{label(item)}</option>)}<option value={CUSTOM_PROBLEM_TYPE}>{t.customProblemType}</option></select></label>
+        {selectedProblemTypeValue(caseForm.problem_type) === CUSTOM_PROBLEM_TYPE && <label>{t.customProblemType}<input value={caseForm.problem_type} onChange={e => updateCaseForm('problem_type', e.target.value)} placeholder={t.customProblemTypePlaceholder} maxLength={128} /></label>}
         <label>{t.reproducible}<select value={caseForm.reproducible} onChange={e => updateCaseForm('reproducible', e.target.value)}><option value="">{t.reproducibleUnknown}</option><option value="true">{t.reproducibleYes}</option><option value="false">{t.reproducibleNo}</option></select></label>
         <label>{t.feedbackReporter}<input value={caseForm.feedback_reporter} onChange={e => updateCaseForm('feedback_reporter', e.target.value)} /></label>
         <label>{t.responsibleOwner}<input value={caseForm.responsible_owner} onChange={e => updateCaseForm('responsible_owner', e.target.value)} /></label>

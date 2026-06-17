@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.models import AIAnalysisStatus, CaseSeverity, CaseSource, CaseStatus, ProblemType, UserRole
 
@@ -101,7 +101,7 @@ class CaseCreate(BaseModel):
     project_id: str | None = None
     owner_id: str | None = None
     severity: CaseSeverity = CaseSeverity.medium
-    problem_type: ProblemType = ProblemType.other
+    problem_type: str = ProblemType.other.value
     scene_description: str | None = None
     expected_result: str | None = None
     actual_result: str | None = None
@@ -112,13 +112,23 @@ class CaseCreate(BaseModel):
     closure_practice: str | None = None
     feedback_acceptance_conclusion: str | None = None
 
+    @field_validator("problem_type")
+    @classmethod
+    def normalize_problem_type(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("problem_type cannot be empty")
+        if len(normalized) > 128:
+            raise ValueError("problem_type cannot exceed 128 characters")
+        return normalized
+
 
 class CaseUpdate(BaseModel):
     title: str | None = None
     owner_id: str | None = None
     status: CaseStatus | None = None
     severity: CaseSeverity | None = None
-    problem_type: ProblemType | None = None
+    problem_type: str | None = None
     scene_description: str | None = None
     expected_result: str | None = None
     actual_result: str | None = None
@@ -132,6 +142,18 @@ class CaseUpdate(BaseModel):
     handling_action: str | None = None
     closure_reason: str | None = None
 
+    @field_validator("problem_type")
+    @classmethod
+    def normalize_problem_type(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("problem_type cannot be empty")
+        if len(normalized) > 128:
+            raise ValueError("problem_type cannot exceed 128 characters")
+        return normalized
+
 
 class CaseRead(ORMModel):
     id: str
@@ -142,7 +164,7 @@ class CaseRead(ORMModel):
     owner_id: str | None
     status: CaseStatus
     severity: CaseSeverity
-    problem_type: ProblemType
+    problem_type: str
     ai_analysis_status: AIAnalysisStatus
     scene_description: str | None
     expected_result: str | None

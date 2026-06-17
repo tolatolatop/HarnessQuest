@@ -17,12 +17,28 @@ AGENT_CASE_COLUMNS = {
 
 def ensure_agent_case_columns(engine: Engine) -> None:
     inspector = inspect(engine)
-    existing = {column["name"] for column in inspector.get_columns("agent_cases")}
+    columns = inspector.get_columns("agent_cases")
+    existing = {column["name"] for column in columns}
     missing = [(name, column_type) for name, column_type in AGENT_CASE_COLUMNS.items() if name not in existing]
-    if not missing:
-        return
     with engine.begin() as conn:
         for name, column_type in missing:
             conn.execute(text(f"ALTER TABLE agent_cases ADD COLUMN {name} {column_type}"))
         if any(name == "tags" for name, _ in missing):
             conn.execute(text("UPDATE agent_cases SET tags = '[]' WHERE tags IS NULL"))
+        if engine.dialect.name == "postgresql" and "problem_type" in existing:
+            result = conn.execute(
+                text(
+                    "SELECT data_type, udt_name FROM information_schema.columns "
+                    "WHERE table_name = 'agent_cases' AND column_name = 'problem_type'"
+                )
+            ).mappings().first()
+            if result and result["data_type"] == "USER-DEFINED":
+                conn.execute(text("ALTER TABLE agent_cases ALTER COLUMN problem_type DROP DEFAULT"))
+                conn.execute(
+                    text(
+                        "ALTER TABLE agent_cases "
+                        "ALTER COLUMN problem_type TYPE VARCHAR(128) "
+                        "USING problem_type::text"
+                    )
+                )
+                conn.execute(text("ALTER TABLE agent_cases ALTER COLUMN problem_type SET DEFAULT 'other'"))

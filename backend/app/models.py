@@ -123,7 +123,7 @@ class AgentCase(Base):
     owner_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     status: Mapped[CaseStatus] = mapped_column(Enum(CaseStatus), default=CaseStatus.to_triage, index=True)
     severity: Mapped[CaseSeverity] = mapped_column(Enum(CaseSeverity), default=CaseSeverity.medium, index=True)
-    problem_type: Mapped[ProblemType] = mapped_column(Enum(ProblemType), default=ProblemType.other, index=True)
+    problem_type: Mapped[str] = mapped_column(String(128), default=ProblemType.other.value, index=True)
     ai_analysis_status: Mapped[AIAnalysisStatus] = mapped_column(
         Enum(AIAnalysisStatus), default=AIAnalysisStatus.pending
     )
