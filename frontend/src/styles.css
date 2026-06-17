@@ -472,7 +472,7 @@ tbody tr.selected {
 }
 
 .detail {
-  max-height: calc(100vh - 104px);
+  max-height: 90vh;
   overflow: auto;
 }
 
