@@ -176,6 +176,10 @@ class AIAnalysisRead(ORMModel):
     created_at: datetime
 
 
+class AIAnalysisFeedback(BaseModel):
+    human_feedback: str
+
+
 class CaseEventCreate(BaseModel):
     event_type: str = "comment"
     comment: str | None = None

@@ -23,9 +23,9 @@ import './styles.css';
 const API = import.meta.env.VITE_API_BASE_URL ?? '';
 
 type User = { id: string; email: string; display_name: string; role: string };
-type Summary = { total_sessions: number; total_cases: number; open_cases: number; closed_cases: number; closure_rate: number; high_risk_cases: number; experience_count: number };
+type Summary = { total_sessions: number; total_cases: number; open_cases: number; closed_cases: number; closure_rate: number; high_risk_cases: number; experience_count: number; avg_closure_hours: number; analysis_feedback_count: number; analysis_acceptance_rate: number };
 type BreakdownItem = { key: string; count: number };
-type Breakdown = { by_status: BreakdownItem[]; by_severity: BreakdownItem[]; by_problem_type: BreakdownItem[]; by_agent_type: BreakdownItem[] };
+type Breakdown = { by_status: BreakdownItem[]; by_severity: BreakdownItem[]; by_problem_type: BreakdownItem[]; by_agent_type: BreakdownItem[]; by_repository: BreakdownItem[]; by_owner: BreakdownItem[]; by_tag: BreakdownItem[] };
 type Session = { id: string; agent_type: string; repository?: string; branch?: string; summary?: string; langfuse_url?: string; created_at: string };
 type Case = {
   id: string;
@@ -48,12 +48,13 @@ type Case = {
   feedback_acceptance_conclusion?: string;
 };
 type CaseDetail = Case & { session?: Session; analyses: Analysis[]; events: EventItem[]; human_conclusion?: string; handling_action?: string };
-type Analysis = { id: string; summary?: string; failure_point?: string; ownership_suggestion?: string; severity_suggestion?: string; next_steps: string[]; experience_suggestion?: string; confidence?: number; error_message?: string; created_at: string };
+type Analysis = { id: string; summary?: string; failure_point?: string; ownership_suggestion?: string; severity_suggestion?: string; next_steps: string[]; experience_suggestion?: string; confidence?: number; human_feedback?: string; error_message?: string; created_at: string };
 type EventItem = { id: string; event_type: string; comment?: string; from_status?: string; to_status?: string; created_at: string };
 type JsonValue = null | boolean | number | string | JsonValue[] | JsonObject;
 type JsonObject = { [key in string]: JsonValue };
 type ChatBlockKind = 'user' | 'assistant' | 'thinking' | 'tool' | 'function' | 'mcp' | 'skill' | 'shell' | 'file' | 'error' | 'diff' | 'observation' | 'metadata';
 type ChatBlock = { kind: ChatBlockKind; title: string; body: string; meta?: string };
+type SessionUploadFormat = 'claude-jsonl' | 'opencode-json';
 const CASE_SEVERITIES = ['low', 'medium', 'high', 'critical'] as const;
 const CASE_PROBLEM_TYPES = [
   'incorrect_model_answer',
@@ -489,6 +490,9 @@ function Dashboard() {
     [t.problemType, breakdown?.by_problem_type ?? []],
     [t.severity, breakdown?.by_severity ?? []],
     [t.agentType, breakdown?.by_agent_type ?? []],
+    [t.topRepository, breakdown?.by_repository ?? []],
+    [t.topOwner, breakdown?.by_owner ?? []],
+    [t.topTag, breakdown?.by_tag ?? []],
   ] as const;
   return (
     <div className="stack">
@@ -516,6 +520,9 @@ function Dashboard() {
         <Stat label={t.closureRate} value={`${Math.round(summary.closure_rate * 100)}%`} icon={<CheckCircle2 size={20} />} />
         <Stat label={t.highRisk} value={summary.high_risk_cases} icon={<AlertTriangle size={20} />} />
         <Stat label={t.experience} value={summary.experience_count} icon={<Database size={20} />} />
+        <Stat label={t.avgClosureHours} value={summary.avg_closure_hours} icon={<CheckCircle2 size={20} />} />
+        <Stat label={t.analysisFeedback} value={summary.analysis_feedback_count} icon={<ClipboardList size={20} />} />
+        <Stat label={t.analysisAcceptance} value={`${Math.round(summary.analysis_acceptance_rate * 100)}%`} icon={<CheckCircle2 size={20} />} />
       </div>
       <div className="grid">
         {groups.map(([title, items]) => <section className="panel" key={title}><h2>{title}</h2>{items.length === 0 ? <p className="muted">{t.noData}</p> : items.map(item => <div className="bar" key={item.key}><span>{label(item.key)}</span><strong>{item.count}</strong></div>)}</section>)}
@@ -694,6 +701,7 @@ function CreateCaseModal({ onClose, onCreated }: { onClose: () => void; onCreate
   const [severity, setSeverity] = useState('medium');
   const [problemType, setProblemType] = useState('other');
   const [tags, setTags] = useState('');
+  const [format, setFormat] = useState<SessionUploadFormat>('claude-jsonl');
   const [file, setFile] = useState<File | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
@@ -708,7 +716,8 @@ function CreateCaseModal({ onClose, onCreated }: { onClose: () => void; onCreate
     try {
       const formData = new FormData();
       formData.set('file', file);
-      const session = await requestForm<Session>('/sessions/upload/claude-jsonl', formData);
+      const uploadPath = format === 'opencode-json' ? '/sessions/upload/opencode-json' : '/sessions/upload/claude-jsonl';
+      const session = await requestForm<Session>(uploadPath, formData);
       const normalizedTitle = title.trim();
       const created = await request<Case>('/cases', {
         method: 'POST',
@@ -738,7 +747,7 @@ function CreateCaseModal({ onClose, onCreated }: { onClose: () => void; onCreate
       <form className="caseCreateModal" onSubmit={submit} onMouseDown={e => e.stopPropagation()}>
         <header className="modalHeader">
           <div className="modalHeaderMain">
-            <div className="modalTitleRow"><span>{t.createCaseTitle}</span><strong>{t.claudeCodeJsonl}</strong></div>
+            <div className="modalTitleRow"><span>{t.createCaseTitle}</span><strong>{format === 'opencode-json' ? t.opencodeJson : t.claudeCodeJsonl}</strong></div>
           </div>
           <button className="iconButton" type="button" aria-label={t.closeModal} onClick={onClose}><X size={18} /></button>
         </header>
@@ -752,8 +761,8 @@ function CreateCaseModal({ onClose, onCreated }: { onClose: () => void; onCreate
           <label>{t.reproducible}<select value={reproducible} onChange={e => setReproducible(e.target.value)}><option value="">{t.reproducibleUnknown}</option><option value="true">{t.reproducibleYes}</option><option value="false">{t.reproducibleNo}</option></select></label>
           <label>{t.responsibleOwner}<input value={responsibleOwner} onChange={e => setResponsibleOwner(e.target.value)} /></label>
           <label>{t.tags}<input value={tags} onChange={e => setTags(e.target.value)} placeholder={t.tagsPlaceholder} /></label>
-          <label>{t.sessionFormat}<select defaultValue="claude-jsonl"><option value="claude-jsonl">{t.claudeCodeJsonl}</option></select></label>
-          <label>{t.sessionRecordFile}<input type="file" accept=".jsonl,application/jsonl,text/plain" required onChange={e => setFile(e.target.files?.[0] ?? null)} /></label>
+          <label>{t.sessionFormat}<select value={format} onChange={e => setFormat(e.target.value as SessionUploadFormat)}><option value="claude-jsonl">{t.claudeCodeJsonl}</option><option value="opencode-json">{t.opencodeJson}</option></select></label>
+          <label>{t.sessionRecordFile}<input type="file" accept=".json,.jsonl,application/json,application/jsonl,text/plain" required onChange={e => setFile(e.target.files?.[0] ?? null)} /></label>
           {error && <div className="error">{error}</div>}
         </div>
         <footer className="modalFooter">
@@ -769,6 +778,9 @@ function CaseDetailPanel({ caseId, onChanged }: { caseId: string | null; onChang
   const [detail, setDetail] = useState<CaseDetail | null>(null);
   const [chatSessionId, setChatSessionId] = useState<string | null>(null);
   const [comment, setComment] = useState('');
+  const [analysisMessage, setAnalysisMessage] = useState('');
+  const [experienceMessage, setExperienceMessage] = useState('');
+  const [experienceForm, setExperienceForm] = useState({ title: '', content: '', tags: '' });
   const [caseForm, setCaseForm] = useState({
     scene_description: '',
     expected_result: '',
@@ -787,6 +799,8 @@ function CaseDetailPanel({ caseId, onChanged }: { caseId: string | null; onChang
     setDetail(null);
     setChatSessionId(null);
     setCaseInfoMessage('');
+    setAnalysisMessage('');
+    setExperienceMessage('');
     if (caseId) {
       void request<CaseDetail>(`/cases/${caseId}`).then(setDetail);
     }
@@ -819,6 +833,28 @@ function CaseDetailPanel({ caseId, onChanged }: { caseId: string | null; onChang
   async function addComment() {
     await request(`/cases/${caseId}/events`, { method: 'POST', body: JSON.stringify({ comment }) });
     setComment(''); await load();
+  }
+  async function saveAnalysisFeedback(analysisId: string, humanFeedback: string) {
+    await request(`/cases/${caseId}/analyses/${analysisId}/feedback`, { method: 'POST', body: JSON.stringify({ human_feedback: humanFeedback }) });
+    setAnalysisMessage(t.analysisFeedbackSaved);
+    await load();
+  }
+  async function extractExperience(analysis?: Analysis) {
+    if (!detail) return;
+    const currentDetail = detail;
+    const titleText = experienceForm.title.trim();
+    const contentText = experienceForm.content.trim();
+    const title = titleText.length > 0 ? titleText : currentDetail.title;
+    const fallbackContent = analysis?.experience_suggestion ?? analysis?.summary ?? currentDetail.closure_practice ?? currentDetail.actual_result ?? currentDetail.title;
+    const content = contentText.length > 0 ? contentText : fallbackContent;
+    await request(`/cases/${caseId}/experience`, {
+      method: 'POST',
+      body: JSON.stringify({ title, content, type: 'failure_mode', tags: parseTags(experienceForm.tags || caseForm.tags) }),
+    });
+    setExperienceForm({ title: '', content: '', tags: '' });
+    setExperienceMessage(t.experienceSaved);
+    await load();
+    onChanged();
   }
   function updateCaseForm(key: keyof typeof caseForm, value: string) {
     setCaseForm(current => ({ ...current, [key]: value }));
@@ -877,7 +913,15 @@ function CaseDetailPanel({ caseId, onChanged }: { caseId: string | null; onChang
         <button onClick={() => patch('closed')}>{t.close}</button>
       </div>
       <h3>{t.aiAnalysis}</h3>
-      {detail.analyses.length === 0 ? <p className="muted">{t.noAnalysis}</p> : detail.analyses.map(a => <div className="analysis" key={a.id}><strong>{label(a.ownership_suggestion ?? t.unknown)}</strong><p>{a.summary}</p>{a.failure_point && <p><b>{t.failure}:</b> {a.failure_point}</p>}{a.error_message && <p className="error">{a.error_message}</p>}</div>)}
+      {analysisMessage && <p className="muted">{analysisMessage}</p>}
+      {detail.analyses.length === 0 ? <p className="muted">{t.noAnalysis}</p> : detail.analyses.map(a => <div className="analysis" key={a.id}><strong>{label(a.ownership_suggestion ?? t.unknown)}</strong><p>{a.summary}</p>{a.failure_point && <p><b>{t.failure}:</b> {a.failure_point}</p>}{a.experience_suggestion && <p><b>{t.experience}:</b> {a.experience_suggestion}</p>}{a.human_feedback && <p><b>{t.analysisFeedback}:</b> {a.human_feedback}</p>}{a.error_message && <p className="error">{a.error_message}</p>}<div className="analysisActions"><button onClick={() => saveAnalysisFeedback(a.id, 'accepted')}>{t.acceptAnalysis}</button><button onClick={() => saveAnalysisFeedback(a.id, 'needs_correction')}>{t.correctAnalysis}</button><button onClick={() => extractExperience(a)}>{t.extractExperience}</button></div></div>)}
+      <h3>{t.extractExperience}</h3>
+      <div className="experienceForm">
+        <label>{t.experienceTitle}<input value={experienceForm.title} onChange={e => setExperienceForm(current => ({ ...current, title: e.target.value }))} placeholder={detail.title} /></label>
+        <label>{t.experienceContent}<textarea value={experienceForm.content} onChange={e => setExperienceForm(current => ({ ...current, content: e.target.value }))} placeholder={detail.analyses[0]?.experience_suggestion ?? detail.closure_practice ?? ''} /></label>
+        <label>{t.tags}<input value={experienceForm.tags} onChange={e => setExperienceForm(current => ({ ...current, tags: e.target.value }))} placeholder={caseForm.tags || t.tagsPlaceholder} /></label>
+        <div className="actions"><button onClick={() => extractExperience(detail.analyses[0])}>{t.extractExperience}</button>{experienceMessage && <span className="muted">{experienceMessage}</span>}</div>
+      </div>
       <h3>{t.timeline}</h3>
       <div className="comment"><input value={comment} onChange={e => setComment(e.target.value)} placeholder={t.addComment} /><button onClick={addComment}>{t.add}</button></div>
       {detail.events.map(e => <div className="event" key={e.id}><b>{label(e.event_type)}</b> {e.from_status && <span>{label(e.from_status)} {'->'} {label(e.to_status)}</span>}<p>{e.comment}</p></div>)}

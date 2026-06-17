@@ -150,6 +150,11 @@ Recommended rollout order:
 2. Local watcher or local collector.
 3. Optional unified agent wrapper.
 
+Current implemented import formats:
+
+- Claude Code JSONL local transcript.
+- opencode JSON exported by the official `opencode export [sessionID]` CLI. The converter follows the official opencode server/API message shape where a session contains `Session` metadata and messages are represented as `{ info: Message, parts: Part[] }`; supported parts include `text`, `reasoning`, `tool`, `file`, `patch`, and related metadata parts.
+
 ### 2. Langfuse Session Foundation
 
 Langfuse should own session and trace visualization where possible.
@@ -494,4 +499,3 @@ Langfuse answers:
 The in-house system should answer:
 
 > What problem did this create, who owns it, what happened next, and what did the team learn?
-

@@ -10,6 +10,7 @@ from app.models import AgentSession, Project, User
 from app.schemas import SessionImport, SessionRead
 from app.services.claude_jsonl import convert_claude_jsonl_content
 from app.services.langfuse import write_langfuse_trace
+from app.services.opencode_export import convert_opencode_export_content
 from app.services.storage import ObjectStorage
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
@@ -151,4 +152,25 @@ async def upload_claude_jsonl_file(
         payload = SessionImport.model_validate(payload_data)
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"Invalid Claude Code JSONL payload: {exc}") from exc
+    return await import_session(payload, current_user, db)
+
+
+@router.post("/upload/opencode-json", response_model=SessionRead)
+async def upload_opencode_json_file(
+    file: UploadFile,
+    project_name: str | None = None,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> AgentSession:
+    content = await file.read()
+    try:
+        payload_data = convert_opencode_export_content(
+            content.decode("utf-8"),
+            source_name=file.filename or "opencode-session.json",
+            project_name=project_name,
+            user_email=current_user.email,
+        )
+        payload = SessionImport.model_validate(payload_data)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Invalid opencode JSON export payload: {exc}") from exc
     return await import_session(payload, current_user, db)

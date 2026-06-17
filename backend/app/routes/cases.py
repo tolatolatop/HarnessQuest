@@ -1,15 +1,15 @@
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import String, cast, or_, select
+from sqlalchemy import cast, or_, select
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Session, selectinload
 
 from app.db import get_db
 from app.dependencies import get_current_user
-from app.models import AgentCase, AIAnalysisStatus, CaseEvent, CaseStatus, ExperienceItem, User
+from app.models import AgentCase, AIAnalysis, AIAnalysisStatus, CaseEvent, CaseStatus, ExperienceItem, User
 from app.queue import get_queue
-from app.schemas import CaseCreate, CaseDetail, CaseEventCreate, CaseRead, CaseUpdate, ExperienceCreate, ExperienceRead
+from app.schemas import AIAnalysisFeedback, CaseCreate, CaseDetail, CaseEventCreate, CaseRead, CaseUpdate, ExperienceCreate, ExperienceRead
 from app.services.analyzer import run_case_analysis
 
 router = APIRouter(prefix="/cases", tags=["cases"])
@@ -85,6 +85,14 @@ def create_case(
     db.commit()
     db.refresh(case)
     return case
+
+
+@router.get("/experience", response_model=list[ExperienceRead])
+def list_experience(
+    _: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> list[ExperienceItem]:
+    return list(db.scalars(select(ExperienceItem).order_by(ExperienceItem.created_at.desc()).limit(200)))
 
 
 @router.get("/{case_id}", response_model=CaseDetail)
@@ -173,6 +181,31 @@ def analyze_case(
     get_queue().enqueue(run_case_analysis, case.id)
     db.refresh(case)
     return case
+
+
+@router.post("/{case_id}/analyses/{analysis_id}/feedback")
+def save_analysis_feedback(
+    case_id: str,
+    analysis_id: str,
+    payload: AIAnalysisFeedback,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict[str, str]:
+    analysis = db.get(AIAnalysis, analysis_id)
+    if not analysis or analysis.case_id != case_id:
+        raise HTTPException(status_code=404, detail="Analysis not found")
+    analysis.human_feedback = payload.human_feedback
+    db.add(
+        CaseEvent(
+            case_id=case_id,
+            event_type="analysis_feedback",
+            actor_id=current_user.id,
+            comment=payload.human_feedback,
+            metadata_json={"analysis_id": analysis_id, "human_feedback": payload.human_feedback},
+        )
+    )
+    db.commit()
+    return {"status": "ok"}
 
 
 @router.post("/{case_id}/close", response_model=CaseRead)

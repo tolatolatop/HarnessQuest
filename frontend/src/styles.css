@@ -747,6 +747,18 @@ tbody tr.selected {
   margin-bottom: 0;
 }
 
+.analysisActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.experienceForm {
+  display: grid;
+  gap: 12px;
+}
+
 .jsonViewer {
   background: #191f1c;
   border: 1px solid #303a35;

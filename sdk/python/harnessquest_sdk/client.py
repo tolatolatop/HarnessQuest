@@ -51,6 +51,17 @@ class HarnessQuestClient:
         response.raise_for_status()
         return _json_object(response)
 
+    def upload_opencode_json(self, path: str | Path) -> dict[str, Any]:
+        with Path(path).open("rb") as handle:
+            response = httpx.post(
+                f"{self.base_url}/api/v1/sessions/upload/opencode-json",
+                headers=self.headers,
+                files={"file": (Path(path).name, handle, "application/json")},
+                timeout=self.timeout,
+            )
+        response.raise_for_status()
+        return _json_object(response)
+
     def create_case(self, title: str, session_id: str | None = None, **kwargs: Any) -> dict[str, Any]:
         payload = {"title": title, "session_id": session_id, **kwargs}
         response = httpx.post(

@@ -68,6 +68,15 @@ Upload a JSON file:
 harnessquest upload examples/sample-session.json --base-url http://localhost:8000
 ```
 
+Upload an opencode session exported with the official CLI:
+
+```bash
+opencode export <sessionID> > opencode-session.json
+harnessquest opencode-upload opencode-session.json --base-url http://localhost:8000
+```
+
+The web console also supports `opencode JSON` when creating a case from an uploaded session record.
+
 Create a case from the uploaded session in the UI, or via CLI:
 
 ```bash
@@ -95,4 +104,3 @@ If the analyzer is not configured, the workflow still works and analysis returns
 - Langfuse integration is optional-write: HarnessQuest stores links and tries to write a basic trace only when keys are configured.
 - OIDC/OAuth variables are reserved for the next implementation pass; built-in accounts are active now.
 - Database migrations are intentionally deferred for the first runnable MVP; the API creates tables on startup.
-
