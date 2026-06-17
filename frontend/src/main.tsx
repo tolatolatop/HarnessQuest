@@ -5,6 +5,8 @@ import {
   AlertTriangle,
   BarChart3,
   Bot,
+  ChevronLeft,
+  ChevronRight,
   CheckCircle2,
   ClipboardList,
   Database,
@@ -560,7 +562,11 @@ function Cases() {
   const [createOpen, setCreateOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [suggestionsOpen, setSuggestionsOpen] = useState(false);
+  const [page, setPage] = useState(1);
   const filters = useMemo(() => parseCaseQuery(query), [query]);
+  const pageSize = 8;
+  const pageCount = Math.max(1, Math.ceil(cases.length / pageSize));
+  const visibleCases = cases.slice((page - 1) * pageSize, page * pageSize);
   const load = useCallback(() => {
     const params = new URLSearchParams();
     if (filters.q.trim()) params.set('q', filters.q.trim());
@@ -577,8 +583,15 @@ function Cases() {
   useEffect(() => {
     void load();
   }, [load]);
+  useEffect(() => {
+    setPage(1);
+  }, [query]);
+  useEffect(() => {
+    setPage(current => Math.min(current, pageCount));
+  }, [pageCount]);
   async function created(caseId: string) {
     await load();
+    setPage(1);
     setSelected(caseId);
     setCreateOpen(false);
   }
@@ -600,7 +613,7 @@ function Cases() {
   }
   return (
     <div className="split">
-      <section className="panel">
+      <section className="panel caseListPanel">
         <div className="panelHeader"><h2>{t.cases}</h2><button onClick={() => setCreateOpen(true)}><Upload size={16} /> {t.createCase}</button></div>
         <div className="caseSearchBox" onBlur={() => window.setTimeout(() => setSuggestionsOpen(false), 120)}>
           <label>{t.caseSearch}</label>
@@ -618,7 +631,14 @@ function Cases() {
             </div>
           )}
         </div>
-        <table><thead><tr><th>{t.title}</th><th>{t.status}</th><th>{t.severity}</th><th>{t.type}</th><th>{t.tags}</th><th>{t.ai}</th></tr></thead><tbody>{cases.map(c => <tr key={c.id} onClick={() => setSelected(c.id)} className={selected === c.id ? 'selected' : ''}><td><strong className="caseTitle">{c.title}</strong></td><td><Badge value={c.status} type="status" /></td><td><Badge value={c.severity} type="severity" /></td><td>{label(c.problem_type)}</td><td><div className="tagList">{(c.tags ?? []).map(item => <span key={item}>{item}</span>)}</div></td><td><Badge value={c.ai_analysis_status} /></td></tr>)}</tbody></table>
+        <table><thead><tr><th>{t.title}</th><th>{t.status}</th><th>{t.severity}</th><th>{t.type}</th><th>{t.tags}</th><th>{t.ai}</th></tr></thead><tbody>{visibleCases.map(c => <tr key={c.id} onClick={() => setSelected(c.id)} className={selected === c.id ? 'selected' : ''}><td><strong className="caseTitle">{c.title}</strong></td><td><Badge value={c.status} type="status" /></td><td><Badge value={c.severity} type="severity" /></td><td>{label(c.problem_type)}</td><td><div className="tagList">{(c.tags ?? []).map(item => <span key={item}>{item}</span>)}</div></td><td><Badge value={c.ai_analysis_status} /></td></tr>)}</tbody></table>
+        <div className="paginationBar">
+          <span>{t.pageSummary.replace('{page}', String(page)).replace('{pages}', String(pageCount)).replace('{total}', String(cases.length))}</span>
+          <div>
+            <button className="iconButton" aria-label={t.previousPage} disabled={page <= 1} onClick={() => setPage(current => Math.max(1, current - 1))}><ChevronLeft size={16} /></button>
+            <button className="iconButton" aria-label={t.nextPage} disabled={page >= pageCount} onClick={() => setPage(current => Math.min(pageCount, current + 1))}><ChevronRight size={16} /></button>
+          </div>
+        </div>
         {createOpen && <CreateCaseModal onClose={() => setCreateOpen(false)} onCreated={created} />}
       </section>
       <CaseDetailPanel caseId={selected} onChanged={load} />

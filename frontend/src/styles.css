@@ -358,6 +358,14 @@ aside p span {
   padding: 18px;
 }
 
+.caseListPanel {
+  display: flex;
+  flex-direction: column;
+  height: 80vh;
+  max-height: 80vh;
+  overflow: hidden;
+}
+
 .panelHeader {
   align-items: center;
   display: flex;
@@ -427,9 +435,23 @@ tbody tr.selected {
   background: #e7f1ed;
 }
 
+.caseListPanel table {
+  table-layout: fixed;
+}
+
+.caseListPanel td,
+.caseListPanel th {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .caseTitle {
   color: #26231e;
+  display: block;
   font-weight: 750;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .agentMark {
@@ -663,6 +685,32 @@ tbody tr.selected {
   color: #0f766e;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 12px;
+}
+
+.paginationBar {
+  align-items: center;
+  border-top: 1px solid #dce4df;
+  display: flex;
+  justify-content: space-between;
+  margin-top: auto;
+  min-height: 48px;
+  padding-top: 10px;
+}
+
+.paginationBar span {
+  color: #626a62;
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.paginationBar div {
+  display: flex;
+  gap: 6px;
+}
+
+.paginationBar .iconButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
 }
 
 .tagList {
