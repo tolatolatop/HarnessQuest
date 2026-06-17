@@ -102,6 +102,13 @@ class CaseCreate(BaseModel):
     owner_id: str | None = None
     severity: CaseSeverity = CaseSeverity.medium
     problem_type: ProblemType = ProblemType.other
+    scene_description: str | None = None
+    expected_result: str | None = None
+    actual_result: str | None = None
+    reproducible: bool | None = None
+    responsible_owner: str | None = None
+    closure_practice: str | None = None
+    feedback_acceptance_conclusion: str | None = None
 
 
 class CaseUpdate(BaseModel):
@@ -110,6 +117,13 @@ class CaseUpdate(BaseModel):
     status: CaseStatus | None = None
     severity: CaseSeverity | None = None
     problem_type: ProblemType | None = None
+    scene_description: str | None = None
+    expected_result: str | None = None
+    actual_result: str | None = None
+    reproducible: bool | None = None
+    responsible_owner: str | None = None
+    closure_practice: str | None = None
+    feedback_acceptance_conclusion: str | None = None
     human_conclusion: str | None = None
     handling_action: str | None = None
     closure_reason: str | None = None
@@ -126,6 +140,13 @@ class CaseRead(ORMModel):
     severity: CaseSeverity
     problem_type: ProblemType
     ai_analysis_status: AIAnalysisStatus
+    scene_description: str | None
+    expected_result: str | None
+    actual_result: str | None
+    reproducible: bool | None
+    responsible_owner: str | None
+    closure_practice: str | None
+    feedback_acceptance_conclusion: str | None
     human_conclusion: str | None
     handling_action: str | None
     closure_reason: str | None

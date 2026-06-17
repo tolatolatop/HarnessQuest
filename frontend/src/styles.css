@@ -16,6 +16,7 @@ body {
 
 button,
 input,
+textarea,
 select {
   font: inherit;
 }
@@ -139,6 +140,16 @@ select {
   color: #201d19;
   min-height: 40px;
   padding: 0 11px;
+}
+
+textarea {
+  background: #ffffff;
+  border: 1px solid #c9d1ca;
+  border-radius: 6px;
+  color: #201d19;
+  min-height: 84px;
+  padding: 9px 11px;
+  resize: vertical;
 }
 
 .app {
@@ -507,10 +518,24 @@ tbody tr.selected {
 }
 
 .actions {
+  align-items: center;
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
   margin: 16px 0;
+}
+
+.caseInfoGrid {
+  display: grid;
+  gap: 12px;
+}
+
+.caseInfoGrid label:first-child,
+.caseInfoGrid label:nth-child(2),
+.caseInfoGrid label:nth-child(3),
+.caseInfoGrid label:nth-child(6),
+.caseInfoGrid label:nth-child(7) {
+  grid-column: 1 / -1;
 }
 
 .actions button:not(:first-child) {
@@ -593,6 +618,8 @@ tbody tr.selected {
 .caseCreateBody {
   display: grid;
   gap: 14px;
+  max-height: 68vh;
+  overflow: auto;
   padding: 18px;
 }
 

@@ -23,7 +23,25 @@ type Summary = { total_sessions: number; total_cases: number; open_cases: number
 type BreakdownItem = { key: string; count: number };
 type Breakdown = { by_status: BreakdownItem[]; by_severity: BreakdownItem[]; by_problem_type: BreakdownItem[]; by_agent_type: BreakdownItem[] };
 type Session = { id: string; agent_type: string; repository?: string; branch?: string; summary?: string; langfuse_url?: string; created_at: string };
-type Case = { id: string; title: string; status: string; severity: string; problem_type: string; ai_analysis_status: string; owner_id?: string; session_id?: string; created_at: string; closure_reason?: string };
+type Case = {
+  id: string;
+  title: string;
+  status: string;
+  severity: string;
+  problem_type: string;
+  ai_analysis_status: string;
+  owner_id?: string;
+  session_id?: string;
+  created_at: string;
+  closure_reason?: string;
+  scene_description?: string;
+  expected_result?: string;
+  actual_result?: string;
+  reproducible?: boolean | null;
+  responsible_owner?: string;
+  closure_practice?: string;
+  feedback_acceptance_conclusion?: string;
+};
 type CaseDetail = Case & { session?: Session; analyses: Analysis[]; events: EventItem[]; human_conclusion?: string; handling_action?: string };
 type Analysis = { id: string; summary?: string; failure_point?: string; ownership_suggestion?: string; severity_suggestion?: string; next_steps: string[]; experience_suggestion?: string; confidence?: number; error_message?: string; created_at: string };
 type EventItem = { id: string; event_type: string; comment?: string; from_status?: string; to_status?: string; created_at: string };
@@ -466,6 +484,11 @@ function Cases() {
 
 function CreateCaseModal({ onClose, onCreated }: { onClose: () => void; onCreated: (caseId: string) => Promise<void> }) {
   const [title, setTitle] = useState('');
+  const [sceneDescription, setSceneDescription] = useState('');
+  const [expectedResult, setExpectedResult] = useState('');
+  const [actualResult, setActualResult] = useState('');
+  const [reproducible, setReproducible] = useState('');
+  const [responsibleOwner, setResponsibleOwner] = useState('');
   const [file, setFile] = useState<File | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
@@ -490,6 +513,11 @@ function CreateCaseModal({ onClose, onCreated }: { onClose: () => void; onCreate
           source: 'offline_log_import',
           severity: 'medium',
           problem_type: 'other',
+          scene_description: sceneDescription || null,
+          expected_result: expectedResult || null,
+          actual_result: actualResult || null,
+          reproducible: reproducible === '' ? null : reproducible === 'true',
+          responsible_owner: responsibleOwner || null,
         }),
       });
       await onCreated(created.id);
@@ -510,6 +538,11 @@ function CreateCaseModal({ onClose, onCreated }: { onClose: () => void; onCreate
         </header>
         <div className="caseCreateBody">
           <label>{t.title}<input value={title} onChange={e => setTitle(e.target.value)} placeholder={t.caseTitlePlaceholder} /></label>
+          <label>{t.sceneDescription}<textarea value={sceneDescription} onChange={e => setSceneDescription(e.target.value)} /></label>
+          <label>{t.expectedResult}<textarea value={expectedResult} onChange={e => setExpectedResult(e.target.value)} /></label>
+          <label>{t.actualResult}<textarea value={actualResult} onChange={e => setActualResult(e.target.value)} /></label>
+          <label>{t.reproducible}<select value={reproducible} onChange={e => setReproducible(e.target.value)}><option value="">{t.reproducibleUnknown}</option><option value="true">{t.reproducibleYes}</option><option value="false">{t.reproducibleNo}</option></select></label>
+          <label>{t.responsibleOwner}<input value={responsibleOwner} onChange={e => setResponsibleOwner(e.target.value)} /></label>
           <label>{t.sessionFormat}<select defaultValue="claude-jsonl"><option value="claude-jsonl">{t.claudeCodeJsonl}</option></select></label>
           <label>{t.sessionRecordFile}<input type="file" accept=".jsonl,application/jsonl,text/plain" required onChange={e => setFile(e.target.files?.[0] ?? null)} /></label>
           {error && <div className="error">{error}</div>}
@@ -527,14 +560,37 @@ function CaseDetailPanel({ caseId, onChanged }: { caseId: string | null; onChang
   const [detail, setDetail] = useState<CaseDetail | null>(null);
   const [chatSessionId, setChatSessionId] = useState<string | null>(null);
   const [comment, setComment] = useState('');
+  const [caseForm, setCaseForm] = useState({
+    scene_description: '',
+    expected_result: '',
+    actual_result: '',
+    reproducible: '',
+    responsible_owner: '',
+    closure_practice: '',
+    feedback_acceptance_conclusion: '',
+  });
+  const [caseInfoMessage, setCaseInfoMessage] = useState('');
   const load = () => (caseId ? request<CaseDetail>(`/cases/${caseId}`).then(setDetail) : Promise.resolve());
   useEffect(() => {
     setDetail(null);
     setChatSessionId(null);
+    setCaseInfoMessage('');
     if (caseId) {
       void request<CaseDetail>(`/cases/${caseId}`).then(setDetail);
     }
   }, [caseId]);
+  useEffect(() => {
+    if (!detail) return;
+    setCaseForm({
+      scene_description: detail.scene_description ?? '',
+      expected_result: detail.expected_result ?? '',
+      actual_result: detail.actual_result ?? '',
+      reproducible: detail.reproducible === null || detail.reproducible === undefined ? '' : String(detail.reproducible),
+      responsible_owner: detail.responsible_owner ?? '',
+      closure_practice: detail.closure_practice ?? '',
+      feedback_acceptance_conclusion: detail.feedback_acceptance_conclusion ?? '',
+    });
+  }, [detail]);
   if (!caseId) return <section className="panel detail"><p className="muted">{t.selectCase}</p></section>;
   if (!detail) return <section className="panel detail">{t.loading}</section>;
   async function patch(status: string) {
@@ -549,6 +605,31 @@ function CaseDetailPanel({ caseId, onChanged }: { caseId: string | null; onChang
     await request(`/cases/${caseId}/events`, { method: 'POST', body: JSON.stringify({ comment }) });
     setComment(''); await load();
   }
+  function updateCaseForm(key: keyof typeof caseForm, value: string) {
+    setCaseForm(current => ({ ...current, [key]: value }));
+  }
+  async function saveCaseInfo() {
+    setCaseInfoMessage('');
+    try {
+      await request(`/cases/${caseId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          scene_description: caseForm.scene_description || null,
+          expected_result: caseForm.expected_result || null,
+          actual_result: caseForm.actual_result || null,
+          reproducible: caseForm.reproducible === '' ? null : caseForm.reproducible === 'true',
+          responsible_owner: caseForm.responsible_owner || null,
+          closure_practice: caseForm.closure_practice || null,
+          feedback_acceptance_conclusion: caseForm.feedback_acceptance_conclusion || null,
+        }),
+      });
+      setCaseInfoMessage(t.caseInfoSaved);
+      await load();
+      onChanged();
+    } catch {
+      setCaseInfoMessage(t.caseInfoSaveFailed);
+    }
+  }
   return (
     <section className="panel detail">
       <h2>{detail.title}</h2>
@@ -556,6 +637,17 @@ function CaseDetailPanel({ caseId, onChanged }: { caseId: string | null; onChang
       {detail.session?.langfuse_url && <a href={detail.session.langfuse_url} target="_blank">{t.openLangfuseTrace}</a>}
       {detail.session_id && <button onClick={() => setChatSessionId(detail.session_id ?? null)}>{t.showRawSession}</button>}
       {chatSessionId && <SessionChatModal sessionId={chatSessionId} onClose={() => setChatSessionId(null)} />}
+      <h3>{t.sceneDescription}</h3>
+      <div className="caseInfoGrid">
+        <label>{t.sceneDescription}<textarea value={caseForm.scene_description} onChange={e => updateCaseForm('scene_description', e.target.value)} /></label>
+        <label>{t.expectedResult}<textarea value={caseForm.expected_result} onChange={e => updateCaseForm('expected_result', e.target.value)} /></label>
+        <label>{t.actualResult}<textarea value={caseForm.actual_result} onChange={e => updateCaseForm('actual_result', e.target.value)} /></label>
+        <label>{t.reproducible}<select value={caseForm.reproducible} onChange={e => updateCaseForm('reproducible', e.target.value)}><option value="">{t.reproducibleUnknown}</option><option value="true">{t.reproducibleYes}</option><option value="false">{t.reproducibleNo}</option></select></label>
+        <label>{t.responsibleOwner}<input value={caseForm.responsible_owner} onChange={e => updateCaseForm('responsible_owner', e.target.value)} /></label>
+        <label>{t.closurePractice}<textarea value={caseForm.closure_practice} onChange={e => updateCaseForm('closure_practice', e.target.value)} /></label>
+        <label>{t.feedbackAcceptanceConclusion}<textarea value={caseForm.feedback_acceptance_conclusion} onChange={e => updateCaseForm('feedback_acceptance_conclusion', e.target.value)} /></label>
+      </div>
+      <div className="actions"><button onClick={saveCaseInfo}>{t.saveCaseInfo}</button>{caseInfoMessage && <span className="muted">{caseInfoMessage}</span>}</div>
       <div className="actions">
         <button onClick={analyze}><PlayCircle size={16} /> {t.analyze}</button>
         <button onClick={() => patch('to_analyze')}>{t.toAnalyze}</button>

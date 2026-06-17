@@ -127,6 +127,13 @@ class AgentCase(Base):
     ai_analysis_status: Mapped[AIAnalysisStatus] = mapped_column(
         Enum(AIAnalysisStatus), default=AIAnalysisStatus.pending
     )
+    scene_description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    expected_result: Mapped[str | None] = mapped_column(Text, nullable=True)
+    actual_result: Mapped[str | None] = mapped_column(Text, nullable=True)
+    reproducible: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    responsible_owner: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    closure_practice: Mapped[str | None] = mapped_column(Text, nullable=True)
+    feedback_acceptance_conclusion: Mapped[str | None] = mapped_column(Text, nullable=True)
     human_conclusion: Mapped[str | None] = mapped_column(Text, nullable=True)
     handling_action: Mapped[str | None] = mapped_column(Text, nullable=True)
     closure_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
