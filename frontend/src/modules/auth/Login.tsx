@@ -23,7 +23,7 @@ export function Login({ onLogin }: { onLogin: () => void }) {
   const [error, setError] = useState('');
   const [oidcEnabled, setOidcEnabled] = useState(false);
   useEffect(() => {
-    void fetch(`${API_BASE_URL}/api/v1/auth/oidc/status`)
+    void fetch(`${API_BASE_URL}/api/v1/auth/oauth/status`)
       .then(res => res.json() as Promise<{ enabled: boolean }>)
       .then(data => setOidcEnabled(data.enabled))
       .catch(() => setOidcEnabled(false));
@@ -48,7 +48,7 @@ export function Login({ onLogin }: { onLogin: () => void }) {
         <label>{t.password}<input type="password" value={password} onChange={e => setPassword(e.target.value)} /></label>
         {error && <div className="error">{error}</div>}
         <button>{t.signIn}</button>
-        {oidcEnabled && <a className="oauthButton" href={`${API_BASE_URL}/api/v1/auth/oidc/login`}>{t.signInWithOAuth}</a>}
+        {oidcEnabled && <a className="oauthButton" href={`${API_BASE_URL}/api/v1/auth/oauth/login`}>{t.signInWithOAuth}</a>}
       </form>
     </main>
   );

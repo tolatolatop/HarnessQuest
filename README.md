@@ -108,5 +108,5 @@ If the analyzer is not configured, the workflow still works and analysis returns
 - This stage does not force a unified model gateway.
 - Offline agent records may be incomplete by design.
 - Langfuse integration is optional-write: HarnessQuest stores links and tries to write a basic trace only when keys are configured.
-- OIDC/OAuth variables are reserved for the next implementation pass; built-in accounts are active now.
+- OAuth/OIDC login is available. See `docs/oauth-third-party-user-management.md` for GitHub and generic provider examples.
 - Database migrations are intentionally deferred for the first runnable MVP; the API creates tables on startup.

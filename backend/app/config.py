@@ -37,6 +37,17 @@ class Settings(BaseSettings):
     oidc_client_secret: str | None = None
     oidc_redirect_uri: str | None = None
 
+    oauth_enabled: bool = False
+    oauth_provider: str = "oidc"
+    oauth_client_id: str | None = None
+    oauth_client_secret: str | None = None
+    oauth_redirect_uri: str | None = None
+    oauth_authorization_url: str | None = None
+    oauth_token_url: str | None = None
+    oauth_userinfo_url: str | None = None
+    oauth_email_url: str | None = None
+    oauth_scope: str = "openid email profile"
+
     bootstrap_admin_email: str = "admin@harnessquest.local"
     bootstrap_admin_password: str = "admin123456"
     bootstrap_admin_name: str = "Admin"

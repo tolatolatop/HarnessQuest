@@ -1,8 +1,3 @@
-import secrets
-from typing import Any
-from urllib.parse import urlencode
-
-import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import select
@@ -14,8 +9,10 @@ from app.dependencies import get_current_user, require_admin
 from app.models import User, UserRole
 from app.schemas import LoginRequest, TokenResponse, UserCreate, UserRead
 from app.security import create_access_token, hash_password, verify_password
+from app.services.oauth import authorization_url, exchange_code, fetch_external_user, new_state, oauth_enabled, provider_config
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+OAUTH_STATE_COOKIE = "hq_oauth_state"
 
 
 @router.post("/login", response_model=TokenResponse)
@@ -34,64 +31,73 @@ def me(user: User = Depends(get_current_user)) -> User:
 @router.get("/oidc/status")
 def oidc_status() -> dict[str, bool]:
     settings = get_settings()
-    return {"enabled": bool(settings.oidc_enabled and settings.oidc_issuer and settings.oidc_client_id)}
+    return {"enabled": oauth_enabled(settings)}
 
 
 @router.get("/oidc/login")
 async def oidc_login(request: Request) -> RedirectResponse:
+    return await _start_oauth(request, "oidc_callback")
+
+
+@router.get("/oauth/status")
+def oauth_status() -> dict[str, bool]:
     settings = get_settings()
-    if not settings.oidc_enabled or not settings.oidc_issuer or not settings.oidc_client_id:
-        raise HTTPException(status_code=404, detail="OIDC is not enabled")
-    config = await _oidc_config(settings.oidc_issuer)
-    redirect_uri = settings.oidc_redirect_uri or str(request.url_for("oidc_callback"))
-    params = {
-        "client_id": settings.oidc_client_id,
-        "redirect_uri": redirect_uri,
-        "response_type": "code",
-        "scope": "openid email profile",
-        "state": secrets.token_urlsafe(16),
-    }
-    return RedirectResponse(f"{config['authorization_endpoint']}?{urlencode(params)}")
+    return {"enabled": oauth_enabled(settings)}
+
+
+@router.get("/oauth/login")
+async def oauth_login(request: Request) -> RedirectResponse:
+    return await _start_oauth(request, "oauth_callback")
 
 
 @router.get("/oidc/callback", name="oidc_callback")
-async def oidc_callback(code: str, request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
-    settings = get_settings()
-    if not settings.oidc_enabled or not settings.oidc_issuer or not settings.oidc_client_id:
-        raise HTTPException(status_code=404, detail="OIDC is not enabled")
-    config = await _oidc_config(settings.oidc_issuer)
-    redirect_uri = settings.oidc_redirect_uri or str(request.url_for("oidc_callback"))
-    data = {
-        "grant_type": "authorization_code",
-        "code": code,
-        "redirect_uri": redirect_uri,
-        "client_id": settings.oidc_client_id,
-    }
-    if settings.oidc_client_secret:
-        data["client_secret"] = settings.oidc_client_secret
-    async with httpx.AsyncClient(timeout=20) as client:
-        token_response = await client.post(config["token_endpoint"], data=data)
-        token_response.raise_for_status()
-        token_body = token_response.json()
-        if not isinstance(token_body, dict) or not isinstance(token_body.get("access_token"), str):
-            raise HTTPException(status_code=502, detail="OIDC token response did not include access token")
-        access_token = token_body["access_token"]
-        userinfo_response = await client.get(
-            config["userinfo_endpoint"],
-            headers={"Authorization": f"Bearer {access_token}"},
-        )
-        userinfo_response.raise_for_status()
-    info = userinfo_response.json()
-    if not isinstance(info, dict):
-        raise HTTPException(status_code=502, detail="OIDC userinfo response must be an object")
-    email = info.get("email")
-    if not email:
-        raise HTTPException(status_code=400, detail="OIDC userinfo did not include email")
-    user = db.scalar(select(User).where(User.email == email))
+async def oidc_callback(code: str, request: Request, state: str | None = None, db: Session = Depends(get_db)) -> HTMLResponse:
+    return await _finish_oauth(code, request, state, "oidc_callback", db)
+
+
+@router.get("/oauth/callback", name="oauth_callback")
+async def oauth_callback(
+    code: str,
+    request: Request,
+    state: str | None = None,
+    db: Session = Depends(get_db),
+) -> HTMLResponse:
+    return await _finish_oauth(code, request, state, "oauth_callback", db)
+
+
+async def _start_oauth(request: Request, callback_route_name: str) -> RedirectResponse:
+    config = await provider_config(get_settings(), str(request.url_for(callback_route_name)))
+    state = new_state()
+    response = RedirectResponse(authorization_url(config, state))
+    response.set_cookie(
+        OAUTH_STATE_COOKIE,
+        state,
+        max_age=600,
+        httponly=True,
+        secure=request.url.scheme == "https",
+        samesite="lax",
+    )
+    return response
+
+
+async def _finish_oauth(
+    code: str,
+    request: Request,
+    state: str | None,
+    callback_route_name: str,
+    db: Session,
+) -> HTMLResponse:
+    cookie_state = request.cookies.get(OAUTH_STATE_COOKIE)
+    if not state or not cookie_state or state != cookie_state:
+        raise HTTPException(status_code=400, detail="Invalid OAuth state")
+    config = await provider_config(get_settings(), str(request.url_for(callback_route_name)))
+    access_token = await exchange_code(config, code)
+    external_user = await fetch_external_user(config, access_token)
+    user = db.scalar(select(User).where(User.email == external_user.email))
     if not user:
         user = User(
-            email=email,
-            display_name=info.get("name") or info.get("preferred_username") or email,
+            email=external_user.email,
+            display_name=external_user.display_name,
             role=UserRole.member,
             password_hash=None,
         )
@@ -109,7 +115,9 @@ async def oidc_callback(code: str, request: Request, db: Session = Depends(get_d
       </body>
     </html>
     """
-    return HTMLResponse(html)
+    response = HTMLResponse(html)
+    response.delete_cookie(OAUTH_STATE_COOKIE)
+    return response
 
 
 @router.get("/users", response_model=list[UserRead])
@@ -132,17 +140,3 @@ def create_user(payload: UserCreate, _: User = Depends(require_admin), db: Sessi
     db.commit()
     db.refresh(user)
     return user
-
-
-async def _oidc_config(issuer: str) -> dict[str, Any]:
-    async with httpx.AsyncClient(timeout=20) as client:
-        response = await client.get(f"{issuer.rstrip('/')}/.well-known/openid-configuration")
-        response.raise_for_status()
-    config = response.json()
-    if not isinstance(config, dict):
-        raise HTTPException(status_code=500, detail="OIDC discovery response must be an object")
-    required = ["authorization_endpoint", "token_endpoint", "userinfo_endpoint"]
-    missing = [key for key in required if key not in config]
-    if missing:
-        raise HTTPException(status_code=500, detail=f"OIDC discovery missing: {', '.join(missing)}")
-    return config
