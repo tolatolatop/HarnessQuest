@@ -107,6 +107,7 @@ class CaseCreate(BaseModel):
     actual_result: str | None = None
     reproducible: bool | None = None
     responsible_owner: str | None = None
+    tags: list[str] = Field(default_factory=list)
     closure_practice: str | None = None
     feedback_acceptance_conclusion: str | None = None
 
@@ -122,6 +123,7 @@ class CaseUpdate(BaseModel):
     actual_result: str | None = None
     reproducible: bool | None = None
     responsible_owner: str | None = None
+    tags: list[str] | None = None
     closure_practice: str | None = None
     feedback_acceptance_conclusion: str | None = None
     human_conclusion: str | None = None
@@ -145,6 +147,7 @@ class CaseRead(ORMModel):
     actual_result: str | None
     reproducible: bool | None
     responsible_owner: str | None
+    tags: list[Any]
     closure_practice: str | None
     feedback_acceptance_conclusion: str | None
     human_conclusion: str | None

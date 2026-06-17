@@ -1,5 +1,5 @@
 import type { SyntheticEvent } from 'react';
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import {
   AlertTriangle,
@@ -10,6 +10,8 @@ import {
   Database,
   LogOut,
   PlayCircle,
+  RotateCcw,
+  Search,
   Upload,
   X,
 } from 'lucide-react';
@@ -39,6 +41,7 @@ type Case = {
   actual_result?: string;
   reproducible?: boolean | null;
   responsible_owner?: string;
+  tags?: string[] | null;
   closure_practice?: string;
   feedback_acceptance_conclusion?: string;
 };
@@ -288,6 +291,15 @@ function Badge({ value, type = 'neutral' }: { value: string | undefined; type?: 
   return <span className={`badge ${type} ${toneClass(value)}`}>{label(value)}</span>;
 }
 
+function parseTags(value: string): string[] {
+  return Array.from(new Set(value.split(/[,\s，]+/).map(item => item.trim()).filter(Boolean)));
+}
+
+function formatDateTimeFilter(value: string, endOfDay = false): string | null {
+  if (!value) return null;
+  return new Date(`${value}T${endOfDay ? '23:59:59' : '00:00:00'}`).toISOString();
+}
+
 function pageSubtitle(tab: string): string {
   if (tab === 'dashboard') return t.dashboardSubtitle;
   if (tab === 'cases') return t.casesSubtitle;
@@ -461,20 +473,46 @@ function Cases() {
   const [cases, setCases] = useState<Case[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
-  const load = () => request<Case[]>('/cases').then(setCases);
+  const [filters, setFilters] = useState({ q: '', status: '', tags: '', createdFrom: '', createdTo: '' });
+  const load = useCallback(() => {
+    const params = new URLSearchParams();
+    if (filters.q.trim()) params.set('q', filters.q.trim());
+    if (filters.status) params.set('status', filters.status);
+    const createdFrom = formatDateTimeFilter(filters.createdFrom);
+    const createdTo = formatDateTimeFilter(filters.createdTo, true);
+    if (createdFrom) params.set('created_from', createdFrom);
+    if (createdTo) params.set('created_to', createdTo);
+    parseTags(filters.tags).forEach(item => params.append('tag', item));
+    const suffix = params.toString();
+    return request<Case[]>(`/cases${suffix ? `?${suffix}` : ''}`).then(setCases);
+  }, [filters]);
   useEffect(() => {
     void load();
-  }, []);
+  }, [load]);
   async function created(caseId: string) {
     await load();
     setSelected(caseId);
     setCreateOpen(false);
   }
+  function updateFilter(key: keyof typeof filters, value: string) {
+    setFilters(current => ({ ...current, [key]: value }));
+  }
+  function resetFilters() {
+    setFilters({ q: '', status: '', tags: '', createdFrom: '', createdTo: '' });
+  }
   return (
     <div className="split">
       <section className="panel">
         <div className="panelHeader"><h2>{t.cases}</h2><button onClick={() => setCreateOpen(true)}><Upload size={16} /> {t.createCase}</button></div>
-        <table><thead><tr><th>{t.title}</th><th>{t.status}</th><th>{t.severity}</th><th>{t.type}</th><th>{t.ai}</th></tr></thead><tbody>{cases.map(c => <tr key={c.id} onClick={() => setSelected(c.id)} className={selected === c.id ? 'selected' : ''}><td><strong className="caseTitle">{c.title}</strong></td><td><Badge value={c.status} type="status" /></td><td><Badge value={c.severity} type="severity" /></td><td>{label(c.problem_type)}</td><td><Badge value={c.ai_analysis_status} /></td></tr>)}</tbody></table>
+        <div className="caseFilters">
+          <label className="filterSearch">{t.keyword}<div><Search size={16} /><input value={filters.q} onChange={e => updateFilter('q', e.target.value)} placeholder={t.keywordPlaceholder} /></div></label>
+          <label>{t.status}<select value={filters.status} onChange={e => updateFilter('status', e.target.value)}><option value="">{t.allStatuses}</option><option value="to_triage">{label('to_triage')}</option><option value="to_analyze">{label('to_analyze')}</option><option value="in_progress">{label('in_progress')}</option><option value="to_verify">{label('to_verify')}</option><option value="closed">{label('closed')}</option></select></label>
+          <label>{t.createdFrom}<input type="date" value={filters.createdFrom} onChange={e => updateFilter('createdFrom', e.target.value)} /></label>
+          <label>{t.createdTo}<input type="date" value={filters.createdTo} onChange={e => updateFilter('createdTo', e.target.value)} /></label>
+          <label>{t.tags}<input value={filters.tags} onChange={e => updateFilter('tags', e.target.value)} placeholder={t.tagsPlaceholder} /></label>
+          <button className="secondaryButton" onClick={resetFilters}><RotateCcw size={16} /> {t.reset}</button>
+        </div>
+        <table><thead><tr><th>{t.title}</th><th>{t.status}</th><th>{t.severity}</th><th>{t.type}</th><th>{t.tags}</th><th>{t.ai}</th></tr></thead><tbody>{cases.map(c => <tr key={c.id} onClick={() => setSelected(c.id)} className={selected === c.id ? 'selected' : ''}><td><strong className="caseTitle">{c.title}</strong></td><td><Badge value={c.status} type="status" /></td><td><Badge value={c.severity} type="severity" /></td><td>{label(c.problem_type)}</td><td><div className="tagList">{(c.tags ?? []).map(item => <span key={item}>{item}</span>)}</div></td><td><Badge value={c.ai_analysis_status} /></td></tr>)}</tbody></table>
         {createOpen && <CreateCaseModal onClose={() => setCreateOpen(false)} onCreated={created} />}
       </section>
       <CaseDetailPanel caseId={selected} onChanged={load} />
@@ -489,6 +527,7 @@ function CreateCaseModal({ onClose, onCreated }: { onClose: () => void; onCreate
   const [actualResult, setActualResult] = useState('');
   const [reproducible, setReproducible] = useState('');
   const [responsibleOwner, setResponsibleOwner] = useState('');
+  const [tags, setTags] = useState('');
   const [file, setFile] = useState<File | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
@@ -518,6 +557,7 @@ function CreateCaseModal({ onClose, onCreated }: { onClose: () => void; onCreate
           actual_result: actualResult || null,
           reproducible: reproducible === '' ? null : reproducible === 'true',
           responsible_owner: responsibleOwner || null,
+          tags: parseTags(tags),
         }),
       });
       await onCreated(created.id);
@@ -543,6 +583,7 @@ function CreateCaseModal({ onClose, onCreated }: { onClose: () => void; onCreate
           <label>{t.actualResult}<textarea value={actualResult} onChange={e => setActualResult(e.target.value)} /></label>
           <label>{t.reproducible}<select value={reproducible} onChange={e => setReproducible(e.target.value)}><option value="">{t.reproducibleUnknown}</option><option value="true">{t.reproducibleYes}</option><option value="false">{t.reproducibleNo}</option></select></label>
           <label>{t.responsibleOwner}<input value={responsibleOwner} onChange={e => setResponsibleOwner(e.target.value)} /></label>
+          <label>{t.tags}<input value={tags} onChange={e => setTags(e.target.value)} placeholder={t.tagsPlaceholder} /></label>
           <label>{t.sessionFormat}<select defaultValue="claude-jsonl"><option value="claude-jsonl">{t.claudeCodeJsonl}</option></select></label>
           <label>{t.sessionRecordFile}<input type="file" accept=".jsonl,application/jsonl,text/plain" required onChange={e => setFile(e.target.files?.[0] ?? null)} /></label>
           {error && <div className="error">{error}</div>}
@@ -566,6 +607,7 @@ function CaseDetailPanel({ caseId, onChanged }: { caseId: string | null; onChang
     actual_result: '',
     reproducible: '',
     responsible_owner: '',
+    tags: '',
     closure_practice: '',
     feedback_acceptance_conclusion: '',
   });
@@ -587,6 +629,7 @@ function CaseDetailPanel({ caseId, onChanged }: { caseId: string | null; onChang
       actual_result: detail.actual_result ?? '',
       reproducible: detail.reproducible === null || detail.reproducible === undefined ? '' : String(detail.reproducible),
       responsible_owner: detail.responsible_owner ?? '',
+      tags: (detail.tags ?? []).join(', '),
       closure_practice: detail.closure_practice ?? '',
       feedback_acceptance_conclusion: detail.feedback_acceptance_conclusion ?? '',
     });
@@ -619,6 +662,7 @@ function CaseDetailPanel({ caseId, onChanged }: { caseId: string | null; onChang
           actual_result: caseForm.actual_result || null,
           reproducible: caseForm.reproducible === '' ? null : caseForm.reproducible === 'true',
           responsible_owner: caseForm.responsible_owner || null,
+          tags: parseTags(caseForm.tags),
           closure_practice: caseForm.closure_practice || null,
           feedback_acceptance_conclusion: caseForm.feedback_acceptance_conclusion || null,
         }),
@@ -644,6 +688,7 @@ function CaseDetailPanel({ caseId, onChanged }: { caseId: string | null; onChang
         <label>{t.actualResult}<textarea value={caseForm.actual_result} onChange={e => updateCaseForm('actual_result', e.target.value)} /></label>
         <label>{t.reproducible}<select value={caseForm.reproducible} onChange={e => updateCaseForm('reproducible', e.target.value)}><option value="">{t.reproducibleUnknown}</option><option value="true">{t.reproducibleYes}</option><option value="false">{t.reproducibleNo}</option></select></label>
         <label>{t.responsibleOwner}<input value={caseForm.responsible_owner} onChange={e => updateCaseForm('responsible_owner', e.target.value)} /></label>
+        <label>{t.tags}<input value={caseForm.tags} onChange={e => updateCaseForm('tags', e.target.value)} placeholder={t.tagsPlaceholder} /></label>
         <label>{t.closurePractice}<textarea value={caseForm.closure_practice} onChange={e => updateCaseForm('closure_practice', e.target.value)} /></label>
         <label>{t.feedbackAcceptanceConclusion}<textarea value={caseForm.feedback_acceptance_conclusion} onChange={e => updateCaseForm('feedback_acceptance_conclusion', e.target.value)} /></label>
       </div>

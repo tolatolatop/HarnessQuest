@@ -8,6 +8,7 @@ AGENT_CASE_COLUMNS = {
     "actual_result": "TEXT",
     "reproducible": "BOOLEAN",
     "responsible_owner": "VARCHAR(255)",
+    "tags": "JSON",
     "closure_practice": "TEXT",
     "feedback_acceptance_conclusion": "TEXT",
 }
@@ -22,3 +23,5 @@ def ensure_agent_case_columns(engine: Engine) -> None:
     with engine.begin() as conn:
         for name, column_type in missing:
             conn.execute(text(f"ALTER TABLE agent_cases ADD COLUMN {name} {column_type}"))
+        if any(name == "tags" for name, _ in missing):
+            conn.execute(text("UPDATE agent_cases SET tags = '[]' WHERE tags IS NULL"))

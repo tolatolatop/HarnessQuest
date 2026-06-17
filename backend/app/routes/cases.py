@@ -1,7 +1,7 @@
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import String, cast, or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.db import get_db
@@ -27,6 +27,10 @@ def list_cases(
     status: CaseStatus | None = None,
     project_id: str | None = None,
     owner_id: str | None = None,
+    created_from: datetime | None = None,
+    created_to: datetime | None = None,
+    tag: list[str] = Query(default_factory=list),
+    q: str | None = None,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> list[AgentCase]:
@@ -37,6 +41,28 @@ def list_cases(
         stmt = stmt.where(AgentCase.project_id == project_id)
     if owner_id:
         stmt = stmt.where(AgentCase.owner_id == owner_id)
+    if created_from:
+        stmt = stmt.where(AgentCase.created_at >= created_from)
+    if created_to:
+        stmt = stmt.where(AgentCase.created_at <= created_to)
+    for item in tag:
+        normalized = item.strip()
+        if normalized:
+            stmt = stmt.where(cast(AgentCase.tags, String).ilike(f"%{normalized}%"))
+    if q:
+        keyword = f"%{q.strip()}%"
+        if keyword != "%%":
+            stmt = stmt.where(
+                or_(
+                    AgentCase.title.ilike(keyword),
+                    AgentCase.scene_description.ilike(keyword),
+                    AgentCase.expected_result.ilike(keyword),
+                    AgentCase.actual_result.ilike(keyword),
+                    AgentCase.responsible_owner.ilike(keyword),
+                    AgentCase.closure_practice.ilike(keyword),
+                    AgentCase.feedback_acceptance_conclusion.ilike(keyword),
+                )
+            )
     return list(db.scalars(stmt))
 
 
