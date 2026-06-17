@@ -1,5 +1,5 @@
 import type { SyntheticEvent } from 'react';
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import {
   AlertTriangle,
@@ -300,6 +300,91 @@ function formatDateTimeFilter(value: string, endOfDay = false): string | null {
   return new Date(`${value}T${endOfDay ? '23:59:59' : '00:00:00'}`).toISOString();
 }
 
+const STATUS_QUERY_LABELS: Record<string, string> = {
+  '待分流': 'to_triage',
+  '待分析': 'to_analyze',
+  '处理中': 'in_progress',
+  '待验证': 'to_verify',
+  '已关闭': 'closed',
+  'to_triage': 'to_triage',
+  'to_analyze': 'to_analyze',
+  'in_progress': 'in_progress',
+  'to_verify': 'to_verify',
+  'closed': 'closed',
+};
+
+type CaseQuery = { q: string; status: string; state: string; tags: string[]; createdFrom: string; createdTo: string };
+
+function dateOnly(date: Date): string {
+  return date.toISOString().slice(0, 10);
+}
+
+function parseCreatedFilter(value: string): { createdFrom: string; createdTo: string } {
+  const today = new Date();
+  if (['今天', 'today'].includes(value)) {
+    const day = dateOnly(today);
+    return { createdFrom: day, createdTo: day };
+  }
+  if (['昨天', 'yesterday'].includes(value)) {
+    const yesterday = new Date(today);
+    yesterday.setDate(today.getDate() - 1);
+    const day = dateOnly(yesterday);
+    return { createdFrom: day, createdTo: day };
+  }
+  if (['最近7天', '7d', 'last7d'].includes(value)) {
+    const start = new Date(today);
+    start.setDate(today.getDate() - 6);
+    return { createdFrom: dateOnly(start), createdTo: dateOnly(today) };
+  }
+  const range = value.split('..');
+  if (range.length === 2) {
+    return { createdFrom: range[0] ?? '', createdTo: range[1] ?? '' };
+  }
+  return { createdFrom: value, createdTo: value };
+}
+
+function parseCaseQuery(input: string): CaseQuery {
+  const result: CaseQuery = { q: '', status: '', state: '', tags: [], createdFrom: '', createdTo: '' };
+  const keywords: string[] = [];
+  const tokens = input.match(/"[^"]+"|\S+/g) ?? [];
+  for (const rawToken of tokens) {
+    const token = rawToken.replace(/^"|"$/g, '');
+    const separator = token.includes(':') ? ':' : token.includes('：') ? '：' : '';
+    if (!separator) {
+      keywords.push(token);
+      continue;
+    }
+    const [rawKey, ...rest] = token.split(separator);
+    const key = rawKey.toLowerCase();
+    const value = rest.join(separator).trim();
+    if (!value) continue;
+    if (['is', '类型'].includes(key)) continue;
+    if (['state', '状态'].includes(key)) {
+      if (['open', '开启', '打开', '未关闭'].includes(value)) result.state = 'open';
+      else if (['closed', '关闭', '已关闭'].includes(value)) result.state = 'closed';
+      else result.status = STATUS_QUERY_LABELS[value] ?? value;
+      continue;
+    }
+    if (['status'].includes(key)) {
+      result.status = STATUS_QUERY_LABELS[value] ?? value;
+      continue;
+    }
+    if (['tag', 'label', '标签'].includes(key)) {
+      result.tags.push(...parseTags(value));
+      continue;
+    }
+    if (['created', 'created-at', '创建', '创建时间'].includes(key)) {
+      const range = parseCreatedFilter(value);
+      result.createdFrom = range.createdFrom;
+      result.createdTo = range.createdTo;
+      continue;
+    }
+    keywords.push(token);
+  }
+  result.q = keywords.join(' ').trim();
+  return result;
+}
+
 function pageSubtitle(tab: string): string {
   if (tab === 'dashboard') return t.dashboardSubtitle;
   if (tab === 'cases') return t.casesSubtitle;
@@ -473,19 +558,22 @@ function Cases() {
   const [cases, setCases] = useState<Case[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
-  const [filters, setFilters] = useState({ q: '', status: '', tags: '', createdFrom: '', createdTo: '' });
+  const [query, setQuery] = useState('');
+  const [suggestionsOpen, setSuggestionsOpen] = useState(false);
+  const filters = useMemo(() => parseCaseQuery(query), [query]);
   const load = useCallback(() => {
     const params = new URLSearchParams();
     if (filters.q.trim()) params.set('q', filters.q.trim());
     if (filters.status) params.set('status', filters.status);
+    if (filters.state) params.set('state', filters.state);
     const createdFrom = formatDateTimeFilter(filters.createdFrom);
     const createdTo = formatDateTimeFilter(filters.createdTo, true);
     if (createdFrom) params.set('created_from', createdFrom);
     if (createdTo) params.set('created_to', createdTo);
-    parseTags(filters.tags).forEach(item => params.append('tag', item));
+    filters.tags.forEach(item => params.append('tag', item));
     const suffix = params.toString();
     return request<Case[]>(`/cases${suffix ? `?${suffix}` : ''}`).then(setCases);
-  }, [filters]);
+  }, [filters.createdFrom, filters.createdTo, filters.q, filters.state, filters.status, filters.tags]);
   useEffect(() => {
     void load();
   }, [load]);
@@ -494,23 +582,41 @@ function Cases() {
     setSelected(caseId);
     setCreateOpen(false);
   }
-  function updateFilter(key: keyof typeof filters, value: string) {
-    setFilters(current => ({ ...current, [key]: value }));
-  }
-  function resetFilters() {
-    setFilters({ q: '', status: '', tags: '', createdFrom: '', createdTo: '' });
+  const knownTags = Array.from(new Set(cases.flatMap(item => item.tags ?? []))).slice(0, 6);
+  const querySuggestions = [
+    { label: '类型:工单', value: 'is:issue' },
+    { label: '状态:开启', value: 'state:open' },
+    { label: '状态:已关闭', value: 'state:closed' },
+    { label: '状态:待分流', value: '状态:待分流' },
+    { label: '状态:处理中', value: '状态:处理中' },
+    { label: '状态:待验证', value: '状态:待验证' },
+    { label: '创建:今天', value: '创建:今天' },
+    { label: '创建:最近7天', value: '创建:最近7天' },
+    ...knownTags.map(item => ({ label: `标签:${item}`, value: `标签:${item}` })),
+  ];
+  function appendQueryToken(value: string) {
+    setQuery(current => `${current.trim()}${current.trim() ? ' ' : ''}${value} `);
+    setSuggestionsOpen(true);
   }
   return (
     <div className="split">
       <section className="panel">
         <div className="panelHeader"><h2>{t.cases}</h2><button onClick={() => setCreateOpen(true)}><Upload size={16} /> {t.createCase}</button></div>
-        <div className="caseFilters">
-          <label className="filterSearch">{t.keyword}<div><Search size={16} /><input value={filters.q} onChange={e => updateFilter('q', e.target.value)} placeholder={t.keywordPlaceholder} /></div></label>
-          <label>{t.status}<select value={filters.status} onChange={e => updateFilter('status', e.target.value)}><option value="">{t.allStatuses}</option><option value="to_triage">{label('to_triage')}</option><option value="to_analyze">{label('to_analyze')}</option><option value="in_progress">{label('in_progress')}</option><option value="to_verify">{label('to_verify')}</option><option value="closed">{label('closed')}</option></select></label>
-          <label>{t.createdFrom}<input type="date" value={filters.createdFrom} onChange={e => updateFilter('createdFrom', e.target.value)} /></label>
-          <label>{t.createdTo}<input type="date" value={filters.createdTo} onChange={e => updateFilter('createdTo', e.target.value)} /></label>
-          <label>{t.tags}<input value={filters.tags} onChange={e => updateFilter('tags', e.target.value)} placeholder={t.tagsPlaceholder} /></label>
-          <button className="secondaryButton" onClick={resetFilters}><RotateCcw size={16} /> {t.reset}</button>
+        <div className="caseSearchBox" onBlur={() => window.setTimeout(() => setSuggestionsOpen(false), 120)}>
+          <label>{t.caseSearch}</label>
+          <div className="issueSearch">
+            <Search size={18} />
+            <input value={query} onFocus={() => setSuggestionsOpen(true)} onChange={e => setQuery(e.target.value)} placeholder={t.caseSearchPlaceholder} />
+            {query && <button className="iconButton" aria-label={t.reset} onClick={() => setQuery('')}><RotateCcw size={16} /></button>}
+          </div>
+          {suggestionsOpen && (
+            <div className="querySuggestions">
+              <div><strong>{t.searchSuggestions}</strong><span>{t.queryExample}: state:open 标签:工具失败 创建:最近7天 复现失败</span></div>
+              <div className="suggestionGrid">
+                {querySuggestions.map(item => <button key={item.value} onMouseDown={e => e.preventDefault()} onClick={() => appendQueryToken(item.value)}><span>{item.label}</span><code>{item.value}</code></button>)}
+              </div>
+            </div>
+          )}
         </div>
         <table><thead><tr><th>{t.title}</th><th>{t.status}</th><th>{t.severity}</th><th>{t.type}</th><th>{t.tags}</th><th>{t.ai}</th></tr></thead><tbody>{cases.map(c => <tr key={c.id} onClick={() => setSelected(c.id)} className={selected === c.id ? 'selected' : ''}><td><strong className="caseTitle">{c.title}</strong></td><td><Badge value={c.status} type="status" /></td><td><Badge value={c.severity} type="severity" /></td><td>{label(c.problem_type)}</td><td><div className="tagList">{(c.tags ?? []).map(item => <span key={item}>{item}</span>)}</div></td><td><Badge value={c.ai_analysis_status} /></td></tr>)}</tbody></table>
         {createOpen && <CreateCaseModal onClose={() => setCreateOpen(false)} onCreated={created} />}

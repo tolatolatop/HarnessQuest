@@ -548,53 +548,121 @@ tbody tr.selected {
   background: #e7eee8;
 }
 
-.caseFilters {
-  align-items: end;
-  background: #f6f8f4;
-  border: 1px solid #d6ded8;
-  border-radius: 8px;
+.caseSearchBox {
   display: grid;
-  gap: 10px;
-  grid-template-columns: minmax(220px, 1.5fr) minmax(140px, 0.8fr) minmax(130px, 0.7fr) minmax(130px, 0.7fr) minmax(180px, 1fr) auto;
+  gap: 7px;
   margin: 0 0 14px;
-  padding: 12px;
+  position: relative;
 }
 
-.caseFilters label {
-  gap: 6px;
+.caseSearchBox > label {
+  color: #5b625c;
+  font-size: 13px;
+  font-weight: 800;
 }
 
-.filterSearch div {
+.issueSearch {
   align-items: center;
   background: #ffffff;
-  border: 1px solid #c9d1ca;
-  border-radius: 6px;
+  border: 1px solid #b9c4bd;
+  border-radius: 8px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9);
   display: flex;
   gap: 8px;
-  height: 42px;
-  padding: 0 10px;
+  min-height: 46px;
+  padding: 0 11px;
 }
 
-.filterSearch svg {
+.issueSearch:focus-within {
+  border-color: #0f766e;
+  box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.12);
+}
+
+.issueSearch svg {
   color: #6e766f;
   flex: 0 0 auto;
 }
 
-.filterSearch input {
+.issueSearch input {
   border: 0;
+  flex: 1;
   height: auto;
   padding: 0;
 }
 
-.filterSearch input:focus {
+.issueSearch input:focus {
   outline: none;
 }
 
-.secondaryButton {
-  background: #ffffff;
-  color: #26231e;
-  height: 42px;
-  white-space: nowrap;
+.issueSearch .iconButton {
+  background: #f6f8f4;
+  border-color: #d7dfd8;
+  color: #4c544d;
+  height: 32px;
+  width: 32px;
+}
+
+.querySuggestions {
+  background: #fbfcf7;
+  border: 1px solid #b9c4bd;
+  border-radius: 8px;
+  box-shadow: 0 18px 42px rgba(31, 36, 32, 0.18);
+  display: grid;
+  gap: 10px;
+  left: 0;
+  padding: 12px;
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  z-index: 20;
+}
+
+.querySuggestions > div:first-child {
+  align-items: baseline;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.querySuggestions strong {
+  color: #201d19;
+  font-size: 14px;
+}
+
+.querySuggestions span {
+  color: #626a62;
+  font-size: 13px;
+}
+
+.suggestionGrid {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.suggestionGrid button {
+  align-items: start;
+  background: #f6f8f4;
+  border-color: #d6ded8;
+  color: #24251f;
+  display: grid;
+  gap: 3px;
+  justify-items: start;
+  min-height: 56px;
+  padding: 8px 10px;
+  text-align: left;
+}
+
+.suggestionGrid button:hover {
+  background: #eef4ef;
+  box-shadow: 0 8px 20px rgba(32, 40, 34, 0.12);
+  transform: translateY(-1px);
+}
+
+.suggestionGrid code {
+  color: #0f766e;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
 }
 
 .tagList {
@@ -942,8 +1010,8 @@ tbody tr.selected {
     grid-template-columns: 1fr;
   }
 
-  .caseFilters {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+  .suggestionGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .detail {
@@ -978,7 +1046,7 @@ tbody tr.selected {
     grid-template-columns: 1fr;
   }
 
-  .caseFilters {
+  .suggestionGrid {
     grid-template-columns: 1fr;
   }
 

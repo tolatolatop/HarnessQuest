@@ -2,6 +2,7 @@ from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import String, cast, or_, select
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Session, selectinload
 
 from app.db import get_db
@@ -25,6 +26,7 @@ ALLOWED_TRANSITIONS = {
 @router.get("", response_model=list[CaseRead])
 def list_cases(
     status: CaseStatus | None = None,
+    state: str | None = None,
     project_id: str | None = None,
     owner_id: str | None = None,
     created_from: datetime | None = None,
@@ -37,6 +39,10 @@ def list_cases(
     stmt = select(AgentCase).order_by(AgentCase.created_at.desc()).limit(300)
     if status:
         stmt = stmt.where(AgentCase.status == status)
+    if state == "open":
+        stmt = stmt.where(AgentCase.status != CaseStatus.closed)
+    elif state == "closed":
+        stmt = stmt.where(AgentCase.status == CaseStatus.closed)
     if project_id:
         stmt = stmt.where(AgentCase.project_id == project_id)
     if owner_id:
@@ -48,7 +54,7 @@ def list_cases(
     for item in tag:
         normalized = item.strip()
         if normalized:
-            stmt = stmt.where(cast(AgentCase.tags, String).ilike(f"%{normalized}%"))
+            stmt = stmt.where(cast(AgentCase.tags, JSONB).contains([normalized]))
     if q:
         keyword = f"%{q.strip()}%"
         if keyword != "%%":
