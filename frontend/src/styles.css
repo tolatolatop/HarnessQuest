@@ -883,6 +883,64 @@ tbody tr.selected {
   white-space: nowrap;
 }
 
+.chatFilterBar {
+  align-items: center;
+  background: #fbfcf7;
+  border-bottom: 1px solid #d7dfd9;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  padding: 10px 14px;
+}
+
+.chatFilterBar > span {
+  color: #697169;
+  flex: 0 0 auto;
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.chatFilterInput {
+  align-items: center;
+  background: #ffffff;
+  border: 1px solid #b9c4bd;
+  border-radius: 7px;
+  display: flex;
+  flex: 1;
+  gap: 8px;
+  min-height: 38px;
+  min-width: 0;
+  padding: 0 10px;
+}
+
+.chatFilterInput:focus-within {
+  border-color: #0f766e;
+  box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.12);
+}
+
+.chatFilterInput svg {
+  color: #68716a;
+  flex: 0 0 auto;
+}
+
+.chatFilterInput input {
+  border: 0;
+  flex: 1;
+  min-height: 34px;
+  min-width: 0;
+  padding: 0;
+}
+
+.chatFilterInput input:focus {
+  outline: none;
+}
+
+.chatFilterInput .iconButton {
+  height: 30px;
+  min-height: 30px;
+  width: 30px;
+}
+
 .chatTranscript {
   display: flex;
   flex: 1;
