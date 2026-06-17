@@ -361,8 +361,8 @@ aside p span {
 .caseListPanel {
   display: flex;
   flex-direction: column;
-  height: 85vh;
-  max-height: 85vh;
+  height: 90vh;
+  max-height: 90vh;
   overflow: hidden;
 }
 
