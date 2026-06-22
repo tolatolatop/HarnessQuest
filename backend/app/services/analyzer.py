@@ -3,6 +3,7 @@ from typing import Any
 
 import httpx
 from jinja2 import Environment
+from sqlalchemy import update
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
@@ -308,8 +309,34 @@ def run_case_analysis(case_id: str) -> None:
         analysis = _perform_analysis(db, case)
         case.ai_analysis_status = AIAnalysisStatus.succeeded if not analysis.error_message else AIAnalysisStatus.failed
         db.commit()
+    except Exception as exc:  # noqa: BLE001
+        db.rollback()
+        _mark_analysis_failed(db, case_id, exc)
     finally:
         db.close()
+
+
+def _mark_analysis_failed(db: Session, case_id: str, exc: Exception) -> None:
+    settings = get_settings()
+    message = str(exc) or exc.__class__.__name__
+    analysis = AIAnalysis(
+        case_id=case_id,
+        model=settings.analyzer_model,
+        summary="AI analysis failed before completion. Review the case manually.",
+        ownership_suggestion="unknown",
+        next_steps=[
+            "Check analyzer worker logs and configuration.",
+            "Retry analysis after fixing the recorded error.",
+        ],
+        error_message=message,
+    )
+    db.add(analysis)
+    db.execute(
+        update(AgentCase)
+        .where(AgentCase.id == case_id)
+        .values(ai_analysis_status=AIAnalysisStatus.failed)
+    )
+    db.commit()
 
 
 def _perform_analysis(db: Session, case: AgentCase) -> AIAnalysis:
