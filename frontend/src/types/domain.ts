@@ -31,6 +31,7 @@ export type Session = {
   branch?: string;
   summary?: string;
   langfuse_url?: string;
+  project_id?: string;
   created_at: string;
 };
 

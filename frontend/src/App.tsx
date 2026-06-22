@@ -36,7 +36,7 @@ export function App() {
     setToken(null);
   }
   if (!token) return <Login onLogin={() => setToken(localStorage.getItem('hq_token'))} />;
-  const content = tab === 'dashboard' ? <Dashboard /> : tab === 'sessions' ? <Sessions /> : <Cases selectedCaseId={route.caseId} onSelectCase={caseId => navigate('cases', caseId)} />;
+  const content = tab === 'dashboard' ? <Dashboard /> : tab === 'sessions' ? <Sessions onCaseCreated={caseId => navigate('cases', caseId)} /> : <Cases selectedCaseId={route.caseId} onSelectCase={caseId => navigate('cases', caseId)} />;
   return (
     <MainLayout tab={tab} user={user} onNavigate={navigate} onLogout={logout}>
       {content}

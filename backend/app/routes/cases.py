@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.db import get_db
 from app.dependencies import get_current_user
-from app.models import AgentCase, AIAnalysis, AIAnalysisStatus, CaseEvent, CaseStatus, ExperienceItem, User
+from app.models import AgentCase, AgentSession, AIAnalysis, AIAnalysisStatus, CaseEvent, CaseStatus, ExperienceItem, User
 from app.queue import get_queue
 from app.schemas import AIAnalysisFeedback, CaseCreate, CaseDetail, CaseEventCreate, CaseRead, CaseUpdate, ExperienceCreate, ExperienceRead
 from app.services.analyzer import run_case_analysis
@@ -79,7 +79,14 @@ def create_case(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> AgentCase:
-    case = AgentCase(**payload.model_dump(), created_by_id=current_user.id)
+    data = payload.model_dump()
+    if payload.session_id:
+        session = db.get(AgentSession, payload.session_id)
+        if not session:
+            raise HTTPException(status_code=404, detail="Session not found")
+        if not data.get("project_id"):
+            data["project_id"] = session.project_id
+    case = AgentCase(**data, created_by_id=current_user.id)
     db.add(case)
     db.flush()
     db.add(CaseEvent(case_id=case.id, event_type="created", actor_id=current_user.id))

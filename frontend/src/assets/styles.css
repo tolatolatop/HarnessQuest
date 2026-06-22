@@ -455,6 +455,32 @@ tbody tr.selected {
   text-overflow: ellipsis;
 }
 
+.sessionTable td,
+.sessionTable th {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sessionTable th:last-child,
+.sessionTable td:last-child {
+  text-align: right;
+  width: 130px;
+}
+
+.secondaryButton {
+  background: #f5f7f3;
+  border-color: #cbd5cf;
+  color: #26231e;
+  min-height: 34px;
+  padding: 0 10px;
+  white-space: nowrap;
+}
+
+.secondaryButton:hover {
+  background: #e7eee8;
+  border-color: #bac7bf;
+}
+
 .caseTitle {
   color: #26231e;
   display: block;

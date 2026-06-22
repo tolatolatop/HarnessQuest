@@ -1,15 +1,17 @@
 import type { SyntheticEvent } from 'react';
 import { useEffect, useMemo, useState } from 'react';
-import { RotateCcw, Search, Upload, X } from 'lucide-react';
+import { ClipboardPlus, RotateCcw, Search, Upload, X } from 'lucide-react';
 import { t } from '../../config/i18n';
 import { request, requestForm } from '../../core/api/client';
 import { relativeTime } from '../../core/utils/format';
 import type { Session } from '../../types/domain';
+import { CreateCaseModal } from '../cases/components/CreateCaseModal';
 import { SessionChatModal } from './components/SessionChatModal';
 
-export function Sessions() {
+export function Sessions({ onCaseCreated }: { onCaseCreated?: (caseId: string) => void }) {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
+  const [caseSession, setCaseSession] = useState<Session | null>(null);
   const [query, setQuery] = useState('');
   const [uploadOpen, setUploadOpen] = useState(false);
   const load = () => request<Session[]>('/sessions').then(setSessions);
@@ -33,6 +35,11 @@ export function Sessions() {
     setSelected(sessionId);
     setUploadOpen(false);
   }
+  async function caseCreated(caseId: string) {
+    setCaseSession(null);
+    await load();
+    onCaseCreated?.(caseId);
+  }
   return (
     <section className="panel">
       <div className="panelHeader">
@@ -47,9 +54,10 @@ export function Sessions() {
           {query && <button className="iconButton" aria-label={t.reset} onClick={() => setQuery('')}><RotateCcw size={16} /></button>}
         </div>
       </div>
-      <table><thead><tr><th>{t.agent}</th><th>{t.repository}</th><th>{t.branch}</th><th>{t.summary}</th><th>{t.createdAt}</th><th>{t.langfuse}</th></tr></thead><tbody>{visibleSessions.map(s => <tr key={s.id} onClick={() => setSelected(s.id)} className={selected === s.id ? 'selected' : ''}><td><span className="agentMark">{s.agent_type}</span></td><td>{s.repository ?? '-'}</td><td>{s.branch ?? '-'}</td><td>{s.summary ?? '-'}</td><td><span className="relativeTime">{relativeTime(s.created_at)}</span></td><td>{s.langfuse_url ? <a href={s.langfuse_url} target="_blank" onClick={e => e.stopPropagation()}>{t.open}</a> : '-'}</td></tr>)}</tbody></table>
+      <table className="sessionTable"><thead><tr><th>{t.agent}</th><th>{t.repository}</th><th>{t.branch}</th><th>{t.summary}</th><th>{t.createdAt}</th><th>{t.langfuse}</th><th>{t.actions}</th></tr></thead><tbody>{visibleSessions.map(s => <tr key={s.id} onClick={() => setSelected(s.id)} className={selected === s.id ? 'selected' : ''}><td><span className="agentMark">{s.agent_type}</span></td><td>{s.repository ?? '-'}</td><td>{s.branch ?? '-'}</td><td>{s.summary ?? '-'}</td><td><span className="relativeTime">{relativeTime(s.created_at)}</span></td><td>{s.langfuse_url ? <a href={s.langfuse_url} target="_blank" onClick={e => e.stopPropagation()}>{t.open}</a> : '-'}</td><td><button className="secondaryButton" onClick={e => { e.stopPropagation(); setCaseSession(s); }}><ClipboardPlus size={16} /> {t.createCase}</button></td></tr>)}</tbody></table>
       {visibleSessions.length === 0 && <p className="muted sessionEmptyState">{t.noMatchingSessions}</p>}
       {uploadOpen && <UploadSessionModal onClose={() => setUploadOpen(false)} onUploaded={uploaded} />}
+      {caseSession && <CreateCaseModal initialSession={caseSession} knownProblemTypes={[]} onClose={() => setCaseSession(null)} onCreated={caseCreated} />}
       {selected && <SessionChatModal sessionId={selected} onClose={() => setSelected(null)} />}
     </section>
   );
