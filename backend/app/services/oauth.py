@@ -8,6 +8,11 @@ from fastapi import HTTPException
 
 from app.config import Settings
 import re
+import logging
+
+
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -148,12 +153,28 @@ async def fetch_external_user(config: OAuthProviderConfig, access_token: str, se
         if not email and config.endpoints.email_url:
             email = await _fetch_primary_email(client, config.endpoints.email_url, access_token)
     if not email:
+        if settings and settings.oauth_map_email:
+            logger.warning(
+                "OAuth field mapping: OAUTH_MAP_EMAIL=%r not found in userinfo response from %s. "
+                "Available top-level keys: %s",
+                settings.oauth_map_email,
+                config.endpoints.userinfo_url,
+                sorted(info.keys()),
+            )
         raise HTTPException(status_code=400, detail="OAuth userinfo did not include email")
     display_name = _resolve_with_fallback(
         info,
         settings.oauth_map_display_name if settings else None,
         lambda: _str_or_none(info.get("name")) or _str_or_none(info.get("preferred_username")) or _str_or_none(info.get("login")) or email,
     )
+    if not display_name and settings and settings.oauth_map_display_name:
+        logger.warning(
+            "OAuth field mapping: OAUTH_MAP_DISPLAY_NAME=%r not found in userinfo response from %s. "
+            "Available top-level keys: %s",
+            settings.oauth_map_display_name,
+            config.endpoints.userinfo_url,
+            sorted(info.keys()),
+        )
     provider_user_id = _str_or_none(info.get("sub")) or _str_or_none(info.get("id"))
     return ExternalUser(email=email, display_name=display_name, provider=config.provider, provider_user_id=provider_user_id)
 
