@@ -48,6 +48,13 @@ class Settings(BaseSettings):
     oauth_email_url: str | None = None
     oauth_scope: str = "openid email profile"
 
+    # OAuth -> User field mapping.
+    # Dot-path with | fallback chain, e.g. OAUTH_MAP_EMAIL=mail|userPrincipalName
+    # When None, uses the current hardcoded fallback logic.
+    oauth_map_email: str | None = None
+    oauth_map_display_name: str | None = None
+
+
     bootstrap_admin_email: str = "admin@harnessquest.local"
     bootstrap_admin_password: str = "admin123456"
     bootstrap_admin_name: str = "Admin"

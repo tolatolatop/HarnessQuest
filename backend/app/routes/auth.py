@@ -9,7 +9,7 @@ from app.dependencies import get_current_user, require_admin
 from app.models import User, UserRole
 from app.schemas import LoginRequest, TokenResponse, UserCreate, UserRead
 from app.security import create_access_token, hash_password, verify_password
-from app.services.oauth import authorization_url, exchange_code, fetch_external_user, new_state, oauth_enabled, provider_config
+from app.services.oauth import authorization_url, exchange_code, fetch_external_user, new_state, oauth_enabled, provider_config, resolve_field
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 OAUTH_STATE_COOKIE = "hq_oauth_state"
@@ -92,7 +92,8 @@ async def _finish_oauth(
         raise HTTPException(status_code=400, detail="Invalid OAuth state")
     config = await provider_config(get_settings(), str(request.url_for(callback_route_name)))
     access_token = await exchange_code(config, code)
-    external_user = await fetch_external_user(config, access_token)
+    settings = get_settings()
+    external_user = await fetch_external_user(config, access_token, settings)
     user = db.scalar(select(User).where(User.email == external_user.email))
     if not user:
         user = User(

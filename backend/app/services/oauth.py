@@ -7,6 +7,7 @@ import httpx
 from fastapi import HTTPException
 
 from app.config import Settings
+import re
 
 
 @dataclass(frozen=True)
@@ -133,7 +134,7 @@ async def exchange_code(config: OAuthProviderConfig, code: str) -> str:
     return token_body["access_token"]
 
 
-async def fetch_external_user(config: OAuthProviderConfig, access_token: str) -> ExternalUser:
+async def fetch_external_user(config: OAuthProviderConfig, access_token: str, settings: Settings | None = None) -> ExternalUser:
     async with httpx.AsyncClient(timeout=20) as client:
         response = await client.get(
             config.endpoints.userinfo_url,
@@ -143,12 +144,16 @@ async def fetch_external_user(config: OAuthProviderConfig, access_token: str) ->
         info = response.json()
         if not isinstance(info, dict):
             raise HTTPException(status_code=502, detail="OAuth userinfo response must be an object")
-        email = _str_or_none(info.get("email"))
+        email = _resolve_with_fallback(info, settings.oauth_map_email if settings else None, lambda: _str_or_none(info.get("email")))
         if not email and config.endpoints.email_url:
             email = await _fetch_primary_email(client, config.endpoints.email_url, access_token)
     if not email:
         raise HTTPException(status_code=400, detail="OAuth userinfo did not include email")
-    display_name = _str_or_none(info.get("name")) or _str_or_none(info.get("preferred_username")) or _str_or_none(info.get("login")) or email
+    display_name = _resolve_with_fallback(
+        info,
+        settings.oauth_map_display_name if settings else None,
+        lambda: _str_or_none(info.get("name")) or _str_or_none(info.get("preferred_username")) or _str_or_none(info.get("login")) or email,
+    )
     provider_user_id = _str_or_none(info.get("sub")) or _str_or_none(info.get("id"))
     return ExternalUser(email=email, display_name=display_name, provider=config.provider, provider_user_id=provider_user_id)
 
@@ -177,3 +182,39 @@ def _str_or_none(value: Any) -> str | None:
     if isinstance(value, int):
         return str(value)
     return None
+
+
+def _resolve_with_fallback(info: dict, mapping: str | None, default_fn) -> str | None:
+    """Resolve a field from userinfo using mapping spec, or fall back to default."""
+    if not mapping:
+        return default_fn()
+    value = resolve_field(info, mapping)
+    return value if value is not None else default_fn()
+
+
+def resolve_field(userinfo: dict, spec: str) -> str | None:
+    """Resolve a field from userinfo dict using dot-path | fallback spec."""
+    if spec.startswith("="):
+        return spec[1:]
+    for path in spec.split("|"):
+        value = _resolve_path(userinfo, path.strip())
+        if value is not None:
+            return _str_or_none(value)
+    return None
+
+
+def _resolve_path(data: dict, path: str) -> Any:
+    """Traverse a dot-path into a dict, supporting array index [N]."""
+    parts = [p for p in re.split(r'[.\[\]]+', path) if p]
+    current = data
+    for part in parts:
+        if isinstance(current, dict):
+            current = current.get(part)
+        elif isinstance(current, (list, tuple)):
+            try:
+                current = current[int(part)]
+            except (IndexError, ValueError):
+                return None
+        else:
+            return None
+    return current
