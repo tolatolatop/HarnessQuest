@@ -1,3 +1,4 @@
+import { RichTextEditor } from '../../../components/RichTextEditor';
 import type { SyntheticEvent } from 'react';
 import { useState } from 'react';
 import { X } from 'lucide-react';
@@ -90,7 +91,7 @@ export function CreateCaseModal({ knownProblemTypes, initialSession, onClose, on
         </header>
         <div className="caseCreateBody">
           <label>{t.title}<input value={title} onChange={e => setTitle(e.target.value)} placeholder={t.caseTitlePlaceholder} /></label>
-          <label>{t.sceneDescription}<textarea value={sceneDescription} onChange={e => setSceneDescription(e.target.value)} /></label>
+          <label>{t.sceneDescription}<RichTextEditor value={sceneDescription} onChange={setSceneDescription} placeholder={t.sceneDescription} /></label>
           <label>{t.expectedResult}<textarea value={expectedResult} onChange={e => setExpectedResult(e.target.value)} /></label>
           <label>{t.actualResult}<textarea value={actualResult} onChange={e => setActualResult(e.target.value)} /></label>
           <label>{t.severity}<select value={severity} onChange={e => setSeverity(e.target.value)}>{CASE_SEVERITIES.map(item => <option key={item} value={item}>{label(item)}</option>)}</select></label>

@@ -1,3 +1,4 @@
+import { RichTextEditor } from '../../components/RichTextEditor';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ChevronLeft, ChevronRight, PlayCircle, RotateCcw, Search, Upload } from 'lucide-react';
 import { Badge } from '../../components/Badge';
@@ -219,7 +220,7 @@ function CaseDetailPanel({ caseId, knownProblemTypes, onChanged }: { caseId: str
       {chatSessionId && <SessionChatModal sessionId={chatSessionId} onClose={() => setChatSessionId(null)} />}
       <h3>{t.sceneDescription}</h3>
       <div className="caseInfoGrid">
-        <label>{t.sceneDescription}<textarea value={caseForm.scene_description} onChange={e => updateCaseForm('scene_description', e.target.value)} /></label>
+        <label>{t.sceneDescription}<RichTextEditor value={caseForm.scene_description} onChange={v => updateCaseForm('scene_description', v)} placeholder={t.sceneDescription} /></label>
         <label>{t.expectedResult}<textarea value={caseForm.expected_result} onChange={e => updateCaseForm('expected_result', e.target.value)} /></label>
         <label>{t.actualResult}<textarea value={caseForm.actual_result} onChange={e => updateCaseForm('actual_result', e.target.value)} /></label>
         <label>{t.severity}<select value={caseForm.severity} onChange={e => updateCaseForm('severity', e.target.value)}>{CASE_SEVERITIES.map(item => <option key={item} value={item}>{label(item)}</option>)}</select></label>

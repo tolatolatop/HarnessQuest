@@ -9,12 +9,14 @@ class Settings(BaseSettings):
     app_name: str = "HarnessQuest"
     environment: str = "local"
     database_url: str = "postgresql+psycopg://harnessquest:harnessquest@app-postgres:5432/harnessquest"
-    redis_url: str = "redis://redis:6379/1"
+    redis_url: str = "redis://redis:***@harnessquest.local"
     jwt_secret: str = "change-me"
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 60 * 12
 
     cors_origins: str = "http://localhost:5173,http://localhost:8080"
+
+    upload_dir: str = "uploads/images"
 
     minio_endpoint_url: str = "http://minio:9000"
     minio_access_key: str = "minio"
