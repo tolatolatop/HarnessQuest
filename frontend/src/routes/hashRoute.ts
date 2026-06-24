@@ -1,4 +1,4 @@
-export const TABS = ['dashboard', 'cases', 'sessions'] as const;
+export const TABS = ['dashboard', 'cases', 'sessions', 'settings'] as const;
 export type Tab = (typeof TABS)[number];
 export type RouteState = { tab: Tab; caseId: string | null };
 
