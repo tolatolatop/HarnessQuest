@@ -22,6 +22,17 @@ def ensure_responsible_owners_table(engine: Engine) -> None:
     ResponsibleOwner.__table__.create(engine, checkfirst=True)
 
 
+
+def ensure_responsible_owner_columns(engine: Engine) -> None:
+    """Add new columns to the existing responsible_owners table."""
+    inspector = inspect(engine)
+    columns = inspector.get_columns("responsible_owners")
+    existing = {column["name"] for column in columns}
+    with engine.begin() as conn:
+        if "responsibility_area" not in existing:
+            conn.execute(text("ALTER TABLE responsible_owners ADD COLUMN responsibility_area VARCHAR(255)"))
+
+
 def ensure_agent_case_columns(engine: Engine) -> None:
     inspector = inspect(engine)
     columns = inspector.get_columns("agent_cases")

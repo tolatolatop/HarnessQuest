@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
 from app.db import Base, SessionLocal, engine
-from app.migrations import ensure_agent_case_columns, ensure_responsible_owners_table
+from app.migrations import ensure_agent_case_columns, ensure_responsible_owner_columns, ensure_responsible_owners_table
 from app.routes import auth, cases, dashboard, projects, responsible_owners, sessions, uploads
 from app.services.bootstrap import bootstrap_admin
 
@@ -16,6 +16,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     Base.metadata.create_all(bind=engine)
     ensure_agent_case_columns(engine)
     ensure_responsible_owners_table(engine)
+    ensure_responsible_owner_columns(engine)
     db = SessionLocal()
     try:
         bootstrap_admin(db)
