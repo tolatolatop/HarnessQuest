@@ -3,12 +3,16 @@ import { X } from 'lucide-react';
 import { t } from '../../../config/i18n';
 import { request } from '../../../core/api/client';
 
-type ResponsibleOwnerDto = { id: string; name: string };
+type ResponsibleOwnerDto = { id: string; name: string; responsibility_area?: string | null };
 
 type ResponsibleOwnerSelectProps = {
   value: string;
   onChange: (value: string) => void;
 };
+
+function optionLabel(o: ResponsibleOwnerDto): string {
+  return o.responsibility_area ? `${o.name}:${o.responsibility_area}` : o.name;
+}
 
 export function ResponsibleOwnerSelect({ value, onChange }: ResponsibleOwnerSelectProps) {
   const [owners, setOwners] = useState<ResponsibleOwnerDto[]>([]);
@@ -63,7 +67,7 @@ export function ResponsibleOwnerSelect({ value, onChange }: ResponsibleOwnerSele
           <option value="">—</option>
           {owners.map(o => (
             <option key={o.id} value={o.name}>
-              {o.name}
+              {optionLabel(o)}
             </option>
           ))}
           <option value="__add_new__">+ {t.addResponsibleOwner}</option>

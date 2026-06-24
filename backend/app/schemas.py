@@ -232,11 +232,13 @@ class CaseDetail(CaseRead):
 
 class ResponsibleOwnerCreate(BaseModel):
     name: str = Field(min_length=1, max_length=255)
+    responsibility_area: str | None = None
 
 
 class ResponsibleOwnerRead(ORMModel):
     id: str
     name: str
+    responsibility_area: str | None
     created_at: datetime
 
 

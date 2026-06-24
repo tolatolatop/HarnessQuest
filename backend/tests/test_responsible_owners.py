@@ -145,3 +145,70 @@ class TestDeleteNotFound:
            Then  the response is 404."""
         status = _delete_owner(client, "00000000-0000-0000-0000-000000000000")
         assert status == 404
+
+# ===================================================================
+# Scenario 8: Create with responsibility_area
+# ===================================================================
+
+class TestResponsibilityArea:
+    def test_create_with_area(self, client: TestClient) -> None:
+        """Given a name and responsibility_area
+           When  POST with {"name": "张三", "responsibility_area": "测试模块"}
+           Then  the response includes the area."""
+        resp = client.post(BASE, json={"name": "张三", "responsibility_area": "测试模块"})
+        assert resp.status_code == 201
+        data = resp.json()
+        assert data["name"] == "张三"
+        assert data["responsibility_area"] == "测试模块"
+
+    def test_create_without_area_is_null(self, client: TestClient) -> None:
+        """Given a name without responsibility_area
+           When  POST with just {"name": "李四"}
+           Then  responsibility_area is null."""
+        owner = _create_owner(client, "李四")
+        assert "responsibility_area" in owner
+        assert owner["responsibility_area"] is None
+
+    def test_list_contains_area(self, client: TestClient) -> None:
+        """Given owners with and without area
+           When  GET /responsible-owners
+           Then  the area field is populated correctly."""
+        client.post(BASE, json={"name": "张三", "responsibility_area": "测试模块"})
+        client.post(BASE, json={"name": "李四"})
+        owners = _list_owners(client)
+        by_name = {o["name"]: o for o in owners}
+        assert by_name["张三"]["responsibility_area"] == "测试模块"
+        assert by_name["李四"]["responsibility_area"] is None
+
+
+# ===================================================================
+# Scenario 9: PATCH (update) responsible owner
+# ===================================================================
+
+class TestPatch:
+    def test_update_name_and_area(self, client: TestClient) -> None:
+        """Given an existing owner
+           When  PATCH with new name and area
+           Then  the owner is updated."""
+        owner = _create_owner(client, "张三")
+        resp = client.patch(f"{BASE}/{owner['id']}", json={"name": "张三改", "responsibility_area": "新模块"})
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["name"] == "张三改"
+        assert data["responsibility_area"] == "新模块"
+
+    def test_patch_nonexistent_returns_404(self, client: TestClient) -> None:
+        """Given no owner with that id
+           When  PATCH
+           Then  404."""
+        resp = client.patch(f"{BASE}/00000000-0000-0000-0000-000000000000", json={"name": "x"})
+        assert resp.status_code == 404
+
+    def test_patch_duplicate_name_returns_400(self, client: TestClient) -> None:
+        """Given two owners A and B
+           When  PATCH B's name to A's name
+           Then  400."""
+        a = _create_owner(client, "AAA")
+        _create_owner(client, "BBB")
+        resp = client.patch(f"{BASE}/{a['id']}", json={"name": "BBB"})
+        assert resp.status_code == 400
