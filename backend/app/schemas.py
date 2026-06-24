@@ -229,6 +229,17 @@ class CaseDetail(CaseRead):
     session: SessionRead | None = None
 
 
+
+class ResponsibleOwnerCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=255)
+
+
+class ResponsibleOwnerRead(ORMModel):
+    id: str
+    name: str
+    created_at: datetime
+
+
 class ExperienceCreate(BaseModel):
     type: str = "failure_mode"
     title: str

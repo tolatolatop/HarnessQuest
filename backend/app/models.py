@@ -195,6 +195,15 @@ class CaseEvent(Base):
     actor: Mapped[User | None] = relationship("User")
 
 
+
+class ResponsibleOwner(Base):
+    __tablename__ = "responsible_owners"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
+    name: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class ExperienceItem(Base):
     __tablename__ = "experience_items"
 

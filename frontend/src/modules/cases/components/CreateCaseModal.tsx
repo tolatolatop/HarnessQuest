@@ -8,6 +8,7 @@ import { parseTags } from '../../../core/utils/format';
 import type { Case, Session } from '../../../types/domain';
 import { CASE_SEVERITIES, CUSTOM_PROBLEM_TYPE } from '../constants';
 import { problemTypeOptions } from '../utils';
+import { ResponsibleOwnerSelect } from './ResponsibleOwnerSelect';
 
 type CreateCaseModalProps = {
   knownProblemTypes: string[];
@@ -99,7 +100,7 @@ export function CreateCaseModal({ knownProblemTypes, initialSession, onClose, on
           {problemType === CUSTOM_PROBLEM_TYPE && <label>{t.customProblemType}<input value={customProblemType} onChange={e => setCustomProblemType(e.target.value)} placeholder={t.customProblemTypePlaceholder} maxLength={128} /></label>}
           <label>{t.reproducible}<select value={reproducible} onChange={e => setReproducible(e.target.value)}><option value="">{t.reproducibleUnknown}</option><option value="true">{t.reproducibleYes}</option><option value="false">{t.reproducibleNo}</option></select></label>
           <label>{t.feedbackReporter}<input value={feedbackReporter} onChange={e => setFeedbackReporter(e.target.value)} /></label>
-          <label>{t.responsibleOwner}<input value={responsibleOwner} onChange={e => setResponsibleOwner(e.target.value)} /></label>
+          <label>{t.responsibleOwner}<ResponsibleOwnerSelect value={responsibleOwner} onChange={setResponsibleOwner} /></label>
           <label>{t.tags}<input value={tags} onChange={e => setTags(e.target.value)} placeholder={t.tagsPlaceholder} /></label>
           {!usesExistingSession && <label>{t.sessionRecordFile}<input type="file" accept=".json,.jsonl,application/json,application/jsonl,text/plain" required onChange={e => setFile(e.target.files?.[0] ?? null)} /></label>}
           {error && <div className="error">{error}</div>}

@@ -15,6 +15,13 @@ AGENT_CASE_COLUMNS = {
 }
 
 
+
+def ensure_responsible_owners_table(engine: Engine) -> None:
+    """Create the responsible_owners table if it doesn't exist."""
+    from app.models import ResponsibleOwner
+    ResponsibleOwner.__table__.create(engine, checkfirst=True)
+
+
 def ensure_agent_case_columns(engine: Engine) -> None:
     inspector = inspect(engine)
     columns = inspector.get_columns("agent_cases")

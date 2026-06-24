@@ -8,6 +8,7 @@ import { parseTags, relativeTime } from '../../core/utils/format';
 import type { Analysis, Case, CaseDetail } from '../../types/domain';
 import { SessionChatModal } from '../sessions/components/SessionChatModal';
 import { CreateCaseModal } from './components/CreateCaseModal';
+import { ResponsibleOwnerSelect } from './components/ResponsibleOwnerSelect';
 import { CASE_SEVERITIES, CUSTOM_PROBLEM_TYPE } from './constants';
 import { caseQuerySuggestions, formatDateTimeFilter, parseCaseQuery, problemTypeOptions, searchExample, selectedProblemTypeValue } from './utils';
 
@@ -228,7 +229,7 @@ function CaseDetailPanel({ caseId, knownProblemTypes, onChanged }: { caseId: str
         {selectedProblemTypeValue(caseForm.problem_type) === CUSTOM_PROBLEM_TYPE && <label>{t.customProblemType}<input value={caseForm.problem_type} onChange={e => updateCaseForm('problem_type', e.target.value)} placeholder={t.customProblemTypePlaceholder} maxLength={128} /></label>}
         <label>{t.reproducible}<select value={caseForm.reproducible} onChange={e => updateCaseForm('reproducible', e.target.value)}><option value="">{t.reproducibleUnknown}</option><option value="true">{t.reproducibleYes}</option><option value="false">{t.reproducibleNo}</option></select></label>
         <label>{t.feedbackReporter}<input value={caseForm.feedback_reporter} onChange={e => updateCaseForm('feedback_reporter', e.target.value)} /></label>
-        <label>{t.responsibleOwner}<input value={caseForm.responsible_owner} onChange={e => updateCaseForm('responsible_owner', e.target.value)} /></label>
+        <label>{t.responsibleOwner}<ResponsibleOwnerSelect value={caseForm.responsible_owner} onChange={v => updateCaseForm('responsible_owner', v)} /></label>
         <label>{t.tags}<input value={caseForm.tags} onChange={e => updateCaseForm('tags', e.target.value)} placeholder={t.tagsPlaceholder} /></label>
         <label>{t.closurePractice}<textarea value={caseForm.closure_practice} onChange={e => updateCaseForm('closure_practice', e.target.value)} /></label>
         <label>{t.feedbackAcceptanceConclusion}<textarea value={caseForm.feedback_acceptance_conclusion} onChange={e => updateCaseForm('feedback_acceptance_conclusion', e.target.value)} /></label>
