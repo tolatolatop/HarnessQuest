@@ -1,4 +1,5 @@
 import json
+import mimetypes
 from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import urlparse
@@ -48,3 +49,26 @@ class ObjectStorage:
         if not isinstance(data, dict):
             raise ValueError("Stored artifact must be a JSON object")
         return data
+
+    def put_binary(
+        self,
+        key: str,
+        data: bytes,
+        content_type: str | None = None,
+    ) -> str:
+        self.ensure_bucket()
+        if not content_type:
+            content_type = mimetypes.guess_type(key)[0] or "application/octet-stream"
+        self.client.put_object(
+            Bucket=self.bucket,
+            Key=key,
+            Body=data,
+            ContentType=content_type,
+        )
+        return f"s3://{self.bucket}/{key}"
+
+    def get_binary(self, key: str) -> tuple[bytes, str | None]:
+        response = self.client.get_object(Bucket=self.bucket, Key=key)
+        data = response["Body"].read()
+        content_type = response.get("ContentType")
+        return data, content_type

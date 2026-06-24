@@ -1,17 +1,20 @@
+import mimetypes
 import os
 import uuid
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile
+from fastapi.responses import Response
 
-from app.config import get_settings
 from app.dependencies import get_current_user
 from app.models import User
+from app.services.storage import ObjectStorage
 
 router = APIRouter(prefix="/uploads", tags=["uploads"])
 
 ALLOWED_IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp"}
 MAX_IMAGE_SIZE = 10 * 1024 * 1024  # 10 MB
+MINIO_IMAGE_PREFIX = "uploads/images"
 
 
 @router.post("/images")
@@ -34,15 +37,32 @@ async def upload_image(
     if len(content) > MAX_IMAGE_SIZE:
         raise HTTPException(status_code=400, detail="Image exceeds maximum size of 10 MB")
 
-    settings = get_settings()
-    upload_dir = settings.upload_dir
-    os.makedirs(upload_dir, exist_ok=True)
-
     ts = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%f")
     unique_name = f"{ts}_{uuid.uuid4().hex[:8]}{ext}"
-    dest = os.path.join(upload_dir, unique_name)
-    with open(dest, "wb") as f:
-        f.write(content)
+    key = f"{MINIO_IMAGE_PREFIX}/{unique_name}"
+
+    content_type = mimetypes.guess_type(file.filename)[0] or "application/octet-stream"
+    storage = ObjectStorage()
+    storage.put_binary(key, content, content_type=content_type)
 
     url = f"/api/v1/uploads/images/{unique_name}"
     return {"url": url}
+
+
+@router.get("/images/{filename}")
+def serve_image(
+    filename: str,
+    current_user: User = Depends(get_current_user),
+) -> Response:
+    key = f"{MINIO_IMAGE_PREFIX}/{filename}"
+    storage = ObjectStorage()
+    try:
+        data, content_type = storage.get_binary(key)
+    except Exception:
+        raise HTTPException(status_code=404, detail="Image not found")
+
+    return Response(
+        content=data,
+        media_type=content_type or "application/octet-stream",
+        headers={"Cache-Control": "public, max-age=86400"},
+    )
