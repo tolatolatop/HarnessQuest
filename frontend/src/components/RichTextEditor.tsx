@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useEditor, EditorContent, type Editor } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import ImageExtension from '@tiptap/extension-image';
@@ -135,6 +135,8 @@ function Toolbar({ editor }: { editor: Editor }) {
 }
 
 export function RichTextEditor({ value, onChange, placeholder, editable = true }: RichTextEditorProps) {
+  const prevValueRef = useRef(value);
+
   const editor = useEditor({
     extensions: [
       StarterKit.configure({
@@ -187,6 +189,27 @@ export function RichTextEditor({ value, onChange, placeholder, editable = true }
       },
     },
   });
+
+  // Sync external value changes into the editor (fixes empty content on async load)
+  useEffect(() => {
+    if (!editor) return;
+    if (editor.isDestroyed) return;
+
+    const currentHtml = editor.getHTML();
+    const newValue = value || '';
+
+    // Avoid overwriting user edits and avoid infinite loops
+    if (newValue !== currentHtml && newValue !== prevValueRef.current) {
+      editor.commands.setContent(newValue, { emitUpdate: false });
+    }
+    prevValueRef.current = newValue;
+  }, [editor, value]);
+
+  // Update editable state dynamically
+  useEffect(() => {
+    if (!editor || editor.isDestroyed) return;
+    editor.setEditable(editable);
+  }, [editor, editable]);
 
   return (
     <div className={'rteContainer' + (editable ? '' : ' rteReadonly')}>
