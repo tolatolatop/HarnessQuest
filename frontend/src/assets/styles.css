@@ -1368,3 +1368,13 @@ tbody tr.selected {
   border-color: #d7ddd4;
   box-shadow: none;
 }
+
+.rteError {
+  color: #9d2d20;
+  font-size: 13px;
+  font-weight: 650;
+  margin-left: auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

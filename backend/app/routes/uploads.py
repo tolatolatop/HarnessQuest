@@ -52,7 +52,6 @@ async def upload_image(
 @router.get("/images/{filename}")
 def serve_image(
     filename: str,
-    current_user: User = Depends(get_current_user),
 ) -> Response:
     key = f"{MINIO_IMAGE_PREFIX}/{filename}"
     storage = ObjectStorage()

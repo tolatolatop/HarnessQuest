@@ -42,30 +42,32 @@ function ToolbarButton({
   );
 }
 
-async function uploadImage(file: File, editor: Editor) {
+async function uploadImage(file: File, editor: Editor): Promise<string | null> {
   const token = localStorage.getItem('hq_token');
+  if (!token) return '请先登录';
+
   const formData = new FormData();
   formData.set('file', file);
 
-  const headers: Record<string, string> = {};
-  if (token) {
-    headers['Authorization'] = 'Bearer ' + token;
-  }
-
   const res = await fetch(API_BASE_URL + '/api/v1/uploads/images', {
     method: 'POST',
-    headers,
+    headers: { 'Authorization': 'Bearer ' + token },
     body: formData,
   });
 
-  if (!res.ok) throw new Error('Upload failed');
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    return '上传失败 (' + res.status + '): ' + (text || '未知错误');
+  }
 
   const data = (await res.json()) as { url: string };
   editor.chain().focus().setImage({ src: data.url }).run();
+  return null;
 }
 
 function Toolbar({ editor }: { editor: Editor }) {
   const [uploading, setUploading] = useState(false);
+  const [errorMsg, setErrorMsg] = useState('');
 
   const addImage = useCallback(() => {
     const input = document.createElement('input');
@@ -75,13 +77,10 @@ function Toolbar({ editor }: { editor: Editor }) {
       const file = input.files?.[0];
       if (!file) return;
       setUploading(true);
-      try {
-        await uploadImage(file, editor);
-      } catch {
-        // silent
-      } finally {
-        setUploading(false);
-      }
+      setErrorMsg('');
+      const err = await uploadImage(file, editor);
+      if (err) setErrorMsg(err);
+      setUploading(false);
     };
     input.click();
   }, [editor]);
@@ -130,6 +129,7 @@ function Toolbar({ editor }: { editor: Editor }) {
         icon={uploading ? <span>..</span> : <span>+</span>}
         action={addImage}
       />
+      {errorMsg && <span className="rteError">{errorMsg}</span>}
     </div>
   );
 }
