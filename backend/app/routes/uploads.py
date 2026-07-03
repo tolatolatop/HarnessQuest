@@ -1,19 +1,22 @@
+import logging
 import mimetypes
-import os
 import uuid
 from datetime import UTC, datetime
+from pathlib import Path
 
+from botocore.exceptions import BotoCoreError, ClientError
 from fastapi import APIRouter, Depends, HTTPException, UploadFile
 from fastapi.responses import Response
 
+from app.config import get_settings
 from app.dependencies import get_current_user
 from app.models import User
 from app.services.storage import ObjectStorage
 
 router = APIRouter(prefix="/uploads", tags=["uploads"])
+logger = logging.getLogger("uvicorn.error")
 
 ALLOWED_IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp"}
-MAX_IMAGE_SIZE = 10 * 1024 * 1024  # 10 MB
 MINIO_IMAGE_PREFIX = "uploads/images"
 
 
@@ -25,7 +28,7 @@ async def upload_image(
     if not file.filename:
         raise HTTPException(status_code=400, detail="Filename is required")
 
-    ext = os.path.splitext(file.filename)[1].lower()
+    ext = Path(file.filename).suffix.lower()
     if ext not in ALLOWED_IMAGE_EXTENSIONS:
         allowed = ", ".join(sorted(ALLOWED_IMAGE_EXTENSIONS))
         raise HTTPException(
@@ -33,9 +36,31 @@ async def upload_image(
             detail=f"Unsupported file extension '{ext}'. Allowed: {allowed}",
         )
 
+    settings = get_settings()
+    max_size_bytes = settings.max_image_upload_size_mb * 1024 * 1024
+
     content = await file.read()
-    if len(content) > MAX_IMAGE_SIZE:
-        raise HTTPException(status_code=400, detail="Image exceeds maximum size of 10 MB")
+    content_size = len(content)
+    logger.info(
+        "Image upload received filename=%s content_type=%s size_bytes=%s max_size_bytes=%s user_id=%s",
+        file.filename,
+        file.content_type,
+        content_size,
+        max_size_bytes,
+        current_user.id,
+    )
+    if content_size > max_size_bytes:
+        logger.warning(
+            "Image upload rejected filename=%s size_bytes=%s max_size_bytes=%s user_id=%s",
+            file.filename,
+            content_size,
+            max_size_bytes,
+            current_user.id,
+        )
+        raise HTTPException(
+            status_code=400,
+            detail=f"Image exceeds maximum size of {settings.max_image_upload_size_mb} MB",
+        )
 
     ts = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%f")
     unique_name = f"{ts}_{uuid.uuid4().hex[:8]}{ext}"
@@ -44,6 +69,14 @@ async def upload_image(
     content_type = mimetypes.guess_type(file.filename)[0] or "application/octet-stream"
     storage = ObjectStorage()
     storage.put_binary(key, content, content_type=content_type)
+    logger.info(
+        "Image upload stored filename=%s key=%s size_bytes=%s content_type=%s user_id=%s",
+        file.filename,
+        key,
+        content_size,
+        content_type,
+        current_user.id,
+    )
 
     url = f"/api/v1/uploads/images/{unique_name}"
     return {"url": url}
@@ -57,8 +90,8 @@ def serve_image(
     storage = ObjectStorage()
     try:
         data, content_type = storage.get_binary(key)
-    except Exception:
-        raise HTTPException(status_code=404, detail="Image not found")
+    except (BotoCoreError, ClientError) as exc:
+        raise HTTPException(status_code=404, detail="Image not found") from exc
 
     return Response(
         content=data,

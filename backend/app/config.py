@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     cors_origins: str = "http://localhost:5173,http://localhost:8080"
 
     upload_dir: str = "uploads/images"
+    max_image_upload_size_mb: int = 20
 
     minio_endpoint_url: str = "http://minio:9000"
     minio_access_key: str = "minio"

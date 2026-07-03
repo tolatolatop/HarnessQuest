@@ -13,6 +13,7 @@ server {
   ssl_certificate_key /etc/nginx/certs/harnessquest.local.key;
   ssl_protocols TLSv1.2 TLSv1.3;
   ssl_session_cache shared:SSL:10m;
+  client_max_body_size ${NGINX_CLIENT_MAX_BODY_SIZE};
 
   root /usr/share/nginx/html;
   index index.html;
