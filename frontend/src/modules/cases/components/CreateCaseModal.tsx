@@ -3,7 +3,7 @@ import type { SyntheticEvent } from 'react';
 import { useState } from 'react';
 import { X } from 'lucide-react';
 import { label, t } from '../../../config/i18n';
-import { request, requestForm } from '../../../core/api/client';
+import { ApiError, request, requestForm } from '../../../core/api/client';
 import { parseTags } from '../../../core/utils/format';
 import type { Case, Session } from '../../../types/domain';
 import { CASE_SEVERITIES, CUSTOM_PROBLEM_TYPE } from '../constants';
@@ -73,8 +73,8 @@ export function CreateCaseModal({ knownProblemTypes, initialSession, onClose, on
         }),
       });
       await onCreated(created.id);
-    } catch {
-      setError(t.createCaseFailed);
+    } catch (exc) {
+      setError(exc instanceof ApiError && exc.status === 409 ? t.sessionAlreadyExists : t.createCaseFailed);
     } finally {
       setSubmitting(false);
     }

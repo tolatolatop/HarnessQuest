@@ -2,7 +2,7 @@ import type { SyntheticEvent } from 'react';
 import { useEffect, useMemo, useState } from 'react';
 import { ClipboardPlus, RotateCcw, Search, Upload, X } from 'lucide-react';
 import { t } from '../../config/i18n';
-import { request, requestForm } from '../../core/api/client';
+import { ApiError, request, requestForm } from '../../core/api/client';
 import { relativeTime } from '../../core/utils/format';
 import type { Session } from '../../types/domain';
 import { CreateCaseModal } from '../cases/components/CreateCaseModal';
@@ -82,8 +82,8 @@ function UploadSessionModal({ onClose, onUploaded }: { onClose: () => void; onUp
       const suffix = projectName.trim() ? `?project_name=${encodeURIComponent(projectName.trim())}` : '';
       const session = await requestForm<Session>(`/sessions/upload/auto${suffix}`, formData);
       await onUploaded(session.id);
-    } catch {
-      setError(t.uploadSessionFailed);
+    } catch (exc) {
+      setError(exc instanceof ApiError && exc.status === 409 ? t.sessionAlreadyExists : t.uploadSessionFailed);
     } finally {
       setSubmitting(false);
     }

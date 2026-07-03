@@ -26,14 +26,15 @@ export async function request<T>(path: string, options: RequestInit = {}): Promi
   return (await res.json()) as T;
 }
 
-export async function requestForm<T>(path: string, formData: FormData): Promise<T> {
+export async function requestForm<T>(path: string, formData: FormData, options: RequestInit = {}): Promise<T> {
   const token = localStorage.getItem('hq_token');
-  const headers = new Headers();
+  const headers = new Headers(options.headers);
   if (token) {
     headers.set('Authorization', `Bearer ${token}`);
   }
   const res = await fetch(`${API_BASE_URL}/api/v1${path}`, {
-    method: 'POST',
+    ...options,
+    method: options.method ?? 'POST',
     headers,
     body: formData,
   });
