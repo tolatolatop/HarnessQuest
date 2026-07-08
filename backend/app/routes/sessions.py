@@ -2,7 +2,7 @@ import json
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
@@ -21,6 +21,7 @@ router = APIRouter(prefix="/sessions", tags=["sessions"])
 def list_sessions(
     project_id: str | None = None,
     agent_type: str | None = None,
+    q: str | None = None,
     _: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> list[AgentSession]:
@@ -29,6 +30,20 @@ def list_sessions(
         stmt = stmt.where(AgentSession.project_id == project_id)
     if agent_type:
         stmt = stmt.where(AgentSession.agent_type == agent_type)
+    if q and len(q.strip()) > 4:
+        keyword = f"%{q.strip()}%"
+        stmt = stmt.where(
+            or_(
+                AgentSession.id.ilike(keyword),
+                AgentSession.external_session_id.ilike(keyword),
+                AgentSession.langfuse_session_id.ilike(keyword),
+                AgentSession.langfuse_trace_id.ilike(keyword),
+                AgentSession.agent_type.ilike(keyword),
+                AgentSession.repository.ilike(keyword),
+                AgentSession.branch.ilike(keyword),
+                AgentSession.summary.ilike(keyword),
+            )
+        )
     return list(db.scalars(stmt))
 
 

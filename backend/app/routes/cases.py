@@ -33,6 +33,7 @@ def list_cases(
     created_to: datetime | None = None,
     tag: list[str] = Query(default_factory=list),
     q: str | None = None,
+    session_id: str | None = None,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> list[AgentCase]:
@@ -70,6 +71,8 @@ def list_cases(
                     AgentCase.feedback_acceptance_conclusion.ilike(keyword),
                 )
             )
+    if session_id and len(session_id.strip()) > 4:
+        stmt = stmt.where(AgentCase.session_id == session_id.strip())
     return list(db.scalars(stmt))
 
 

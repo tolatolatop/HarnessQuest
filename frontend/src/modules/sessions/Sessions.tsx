@@ -1,5 +1,5 @@
 import type { SyntheticEvent } from 'react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ClipboardPlus, RotateCcw, Search, Upload, X } from 'lucide-react';
 import { t } from '../../config/i18n';
 import { ApiError, request, requestForm } from '../../core/api/client';
@@ -14,22 +14,19 @@ export function Sessions({ onCaseCreated }: { onCaseCreated?: (caseId: string) =
   const [caseSession, setCaseSession] = useState<Session | null>(null);
   const [query, setQuery] = useState('');
   const [uploadOpen, setUploadOpen] = useState(false);
-  const load = () => request<Session[]>('/sessions').then(setSessions);
+  const load = () => {
+    const params = new URLSearchParams();
+    if (query.trim() && query.trim().length > 4) params.set('q', query.trim());
+    const suffix = params.toString();
+    return request<Session[]>(`/sessions${suffix ? `?${suffix}` : ''}`).then(setSessions);
+  };
   useEffect(() => {
     void load();
   }, []);
-  const visibleSessions = useMemo(() => {
-    const keyword = query.trim().toLowerCase();
-    if (!keyword) return sessions;
-    return sessions.filter(session => [
-      session.agent_type,
-      session.repository,
-      session.branch,
-      session.summary,
-      session.langfuse_url,
-      session.created_at,
-    ].some(value => (value ?? '').toLowerCase().includes(keyword)));
-  }, [query, sessions]);
+  useEffect(() => {
+    void load();
+  }, [query]);
+
   async function uploaded(sessionId: string) {
     await load();
     setSelected(sessionId);
@@ -54,8 +51,8 @@ export function Sessions({ onCaseCreated }: { onCaseCreated?: (caseId: string) =
           {query && <button className="iconButton" aria-label={t.reset} onClick={() => setQuery('')}><RotateCcw size={16} /></button>}
         </div>
       </div>
-      <table className="sessionTable"><thead><tr><th>{t.agent}</th><th>{t.repository}</th><th>{t.branch}</th><th>{t.summary}</th><th>{t.createdAt}</th><th>{t.langfuse}</th><th>{t.actions}</th></tr></thead><tbody>{visibleSessions.map(s => <tr key={s.id} onClick={() => setSelected(s.id)} className={selected === s.id ? 'selected' : ''}><td><span className="agentMark">{s.agent_type}</span></td><td>{s.repository ?? '-'}</td><td>{s.branch ?? '-'}</td><td>{s.summary ?? '-'}</td><td><span className="relativeTime">{relativeTime(s.created_at)}</span></td><td>{s.langfuse_url ? <a href={s.langfuse_url} target="_blank" onClick={e => e.stopPropagation()}>{t.open}</a> : '-'}</td><td><button className="secondaryButton" onClick={e => { e.stopPropagation(); setCaseSession(s); }}><ClipboardPlus size={16} /> {t.createCase}</button></td></tr>)}</tbody></table>
-      {visibleSessions.length === 0 && <p className="muted sessionEmptyState">{t.noMatchingSessions}</p>}
+      <table className="sessionTable"><thead><tr><th>{t.agent}</th><th>{t.repository}</th><th>{t.branch}</th><th>{t.summary}</th><th>{t.createdAt}</th><th>{'会话 ID'}</th><th>{t.langfuse}</th><th>{t.actions}</th></tr></thead><tbody>{sessions.map(s => <tr key={s.id} onClick={() => setSelected(s.id)} className={selected === s.id ? 'selected' : ''}><td><span className="agentMark">{s.agent_type}</span></td><td>{s.repository ?? '-'}</td><td>{s.branch ?? '-'}</td><td>{s.summary ?? '-'}</td><td><span className="relativeTime">{relativeTime(s.created_at)}</span></td><td><code>{s.id ? s.id.slice(0, 8) + '-' : '-'}</code></td><td>{s.langfuse_url ? <a href={s.langfuse_url} target="_blank" onClick={e => e.stopPropagation()}>{t.open}</a> : '-'}</td><td><button className="secondaryButton" onClick={e => { e.stopPropagation(); setCaseSession(s); }}><ClipboardPlus size={16} /> {t.createCase}</button></td></tr>)}</tbody></table>
+      {sessions.length === 0 && <p className="muted sessionEmptyState">{t.noMatchingSessions}</p>}
       {uploadOpen && <UploadSessionModal onClose={() => setUploadOpen(false)} onUploaded={uploaded} />}
       {caseSession && <CreateCaseModal initialSession={caseSession} knownProblemTypes={[]} onClose={() => setCaseSession(null)} onCreated={caseCreated} />}
       {selected && <SessionChatModal sessionId={selected} onClose={() => setSelected(null)} />}
