@@ -2,7 +2,7 @@ import { t } from '../../config/i18n';
 import { parseTags } from '../../core/utils/format';
 import { CASE_PROBLEM_TYPES, CUSTOM_PROBLEM_TYPE, PRESET_PROBLEM_TYPE_SET } from './constants';
 
-export type CaseQuery = { q: string; status: string; state: string; tags: string[]; createdFrom: string; createdTo: string };
+export type CaseQuery = { q: string; status: string; state: string; tags: string[]; createdFrom: string; createdTo: string; session: string };
 
 const STATUS_QUERY_LABELS: Record<string, string> = {
   '待分流': 'to_triage',
@@ -54,7 +54,7 @@ function parseCreatedFilter(value: string): { createdFrom: string; createdTo: st
 }
 
 export function parseCaseQuery(input: string): CaseQuery {
-  const result: CaseQuery = { q: '', status: '', state: '', tags: [], createdFrom: '', createdTo: '' };
+  const result: CaseQuery = { q: '', status: '', state: '', tags: [], createdFrom: '', createdTo: '', session: '' };
   const keywords: string[] = [];
   const tokens = input.match(/"[^"]+"|\S+/g) ?? [];
   for (const rawToken of tokens) {
@@ -81,6 +81,10 @@ export function parseCaseQuery(input: string): CaseQuery {
     }
     if (['tag', 'label', '标签'].includes(key)) {
       result.tags.push(...parseTags(value));
+      continue;
+    }
+    if (['session', '会话'].includes(key)) {
+      result.session = value;
       continue;
     }
     if (['created', 'created-at', '创建', '创建时间'].includes(key)) {

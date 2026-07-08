@@ -32,9 +32,10 @@ export function Cases({ selectedCaseId, onSelectCase }: { selectedCaseId: string
     if (createdFrom) params.set('created_from', createdFrom);
     if (createdTo) params.set('created_to', createdTo);
     filters.tags.forEach(item => params.append('tag', item));
+    if (filters.session.trim()) params.set('session_id', filters.session.trim());
     const suffix = params.toString();
     return request<Case[]>(`/cases${suffix ? `?${suffix}` : ''}`).then(setCases);
-  }, [filters.createdFrom, filters.createdTo, filters.q, filters.state, filters.status, filters.tags]);
+  }, [filters.createdFrom, filters.createdTo, filters.q, filters.session, filters.state, filters.status, filters.tags]);
   useEffect(() => {
     void load();
   }, [load]);
@@ -83,7 +84,7 @@ export function Cases({ selectedCaseId, onSelectCase }: { selectedCaseId: string
             </div>
           )}
         </div>
-        <table><thead><tr><th>{t.title}</th><th>{t.createdAt}</th><th>{t.status}</th><th>{t.severity}</th><th>{t.type}</th><th>{t.tags}</th><th>{t.ai}</th></tr></thead><tbody>{visibleCases.map(c => <tr key={c.id} onClick={() => onSelectCase(c.id)} className={selectedCaseId === c.id ? 'selected' : ''}><td><strong className="caseTitle">{c.title}</strong></td><td><span className="relativeTime">{relativeTime(c.created_at)}</span></td><td><Badge value={c.status} type="status" /></td><td><Badge value={c.severity} type="severity" /></td><td>{label(c.problem_type)}</td><td><div className="tagList">{(c.tags ?? []).map(item => <span key={item}>{item}</span>)}</div></td><td><Badge value={c.ai_analysis_status} /></td></tr>)}</tbody></table>
+        <table><thead><tr><th>{t.title}</th><th>{t.createdAt}</th><th>{t.status}</th><th>{t.severity}</th><th>{t.type}</th><th>{t.tags}</th><th>{'会话 ID'}</th><th>{t.ai}</th></tr></thead><tbody>{visibleCases.map(c => <tr key={c.id} onClick={() => onSelectCase(c.id)} className={selectedCaseId === c.id ? 'selected' : ''}><td><strong className="caseTitle">{c.title}</strong></td><td><span className="relativeTime">{relativeTime(c.created_at)}</span></td><td><Badge value={c.status} type="status" /></td><td><Badge value={c.severity} type="severity" /></td><td>{label(c.problem_type)}</td><td><div className="tagList">{(c.tags ?? []).map(item => <span key={item}>{item}</span>)}</div></td><td><code>{c.session_id ? c.session_id.slice(0, 8) + '-' : '-'}</code></td><td><Badge value={c.ai_analysis_status} /></td></tr>)}</tbody></table>
         <div className="paginationBar">
           <span>{t.pageSummary.replace('{page}', String(page)).replace('{pages}', String(pageCount)).replace('{total}', String(cases.length))}</span>
           <div>
