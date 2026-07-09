@@ -1,3 +1,4 @@
+import { RichTextEditor } from '../../components/RichTextEditor';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ChevronLeft, ChevronRight, PlayCircle, RotateCcw, Search, Upload } from 'lucide-react';
 import { Badge } from '../../components/Badge';
@@ -5,8 +6,11 @@ import { label, t } from '../../config/i18n';
 import { request } from '../../core/api/client';
 import { parseTags, relativeTime } from '../../core/utils/format';
 import type { Analysis, Case, CaseDetail } from '../../types/domain';
+
+type PaginatedResponse<T> = { items: T[]; total: number };
 import { SessionChatModal } from '../sessions/components/SessionChatModal';
 import { CreateCaseModal } from './components/CreateCaseModal';
+import { ResponsibleOwnerSelect } from './components/ResponsibleOwnerSelect';
 import { CASE_SEVERITIES, CUSTOM_PROBLEM_TYPE } from './constants';
 import { caseQuerySuggestions, formatDateTimeFilter, parseCaseQuery, problemTypeOptions, searchExample, selectedProblemTypeValue } from './utils';
 
@@ -16,10 +20,10 @@ export function Cases({ selectedCaseId, onSelectCase }: { selectedCaseId: string
   const [query, setQuery] = useState('');
   const [suggestionsOpen, setSuggestionsOpen] = useState(false);
   const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
   const filters = useMemo(() => parseCaseQuery(query), [query]);
-  const pageSize = 8;
-  const pageCount = Math.max(1, Math.ceil(cases.length / pageSize));
-  const visibleCases = cases.slice((page - 1) * pageSize, page * pageSize);
+  const pageSize = 10;
+  const pageCount = Math.max(1, Math.ceil(total / pageSize));
   const load = useCallback(() => {
     const params = new URLSearchParams();
     if (filters.q.trim()) params.set('q', filters.q.trim());
@@ -29,10 +33,13 @@ export function Cases({ selectedCaseId, onSelectCase }: { selectedCaseId: string
     const createdTo = formatDateTimeFilter(filters.createdTo, true);
     if (createdFrom) params.set('created_from', createdFrom);
     if (createdTo) params.set('created_to', createdTo);
+    params.set('page', String(page));
+    params.set('page_size', String(pageSize));
     filters.tags.forEach(item => params.append('tag', item));
+    if (filters.session.trim()) params.set('session_id', filters.session.trim());
     const suffix = params.toString();
-    return request<Case[]>(`/cases${suffix ? `?${suffix}` : ''}`).then(setCases);
-  }, [filters.createdFrom, filters.createdTo, filters.q, filters.state, filters.status, filters.tags]);
+    return request<PaginatedResponse<Case>>(`/cases${suffix ? `?${suffix}` : ''}`).then(data => { setCases(data.items); setTotal(data.total); });
+  }, [filters.createdFrom, filters.createdTo, filters.q, filters.session, filters.state, filters.status, filters.tags, page]);
   useEffect(() => {
     void load();
   }, [load]);
@@ -42,13 +49,6 @@ export function Cases({ selectedCaseId, onSelectCase }: { selectedCaseId: string
   useEffect(() => {
     setPage(current => Math.min(current, pageCount));
   }, [pageCount]);
-  useEffect(() => {
-    if (!selectedCaseId) return;
-    const index = cases.findIndex(item => item.id === selectedCaseId);
-    if (index >= 0) {
-      setPage(Math.floor(index / pageSize) + 1);
-    }
-  }, [cases, selectedCaseId]);
   async function created(caseId: string) {
     await load();
     setPage(1);
@@ -81,7 +81,7 @@ export function Cases({ selectedCaseId, onSelectCase }: { selectedCaseId: string
             </div>
           )}
         </div>
-        <table><thead><tr><th>{t.title}</th><th>{t.createdAt}</th><th>{t.status}</th><th>{t.severity}</th><th>{t.type}</th><th>{t.tags}</th><th>{t.ai}</th></tr></thead><tbody>{visibleCases.map(c => <tr key={c.id} onClick={() => onSelectCase(c.id)} className={selectedCaseId === c.id ? 'selected' : ''}><td><strong className="caseTitle">{c.title}</strong></td><td><span className="relativeTime">{relativeTime(c.created_at)}</span></td><td><Badge value={c.status} type="status" /></td><td><Badge value={c.severity} type="severity" /></td><td>{label(c.problem_type)}</td><td><div className="tagList">{(c.tags ?? []).map(item => <span key={item}>{item}</span>)}</div></td><td><Badge value={c.ai_analysis_status} /></td></tr>)}</tbody></table>
+        <table><thead><tr><th>{t.title}</th><th>{t.createdAt}</th><th>{t.status}</th><th>{t.severity}</th><th>{t.type}</th><th>{t.tags}</th><th>{'会话 ID'}</th><th>{t.ai}</th></tr></thead><tbody>{cases.map(c => <tr key={c.id} onClick={() => onSelectCase(c.id)} className={selectedCaseId === c.id ? 'selected' : ''}><td><strong className="caseTitle">{c.title}</strong></td><td><span className="relativeTime">{relativeTime(c.created_at)}</span></td><td><Badge value={c.status} type="status" /></td><td><Badge value={c.severity} type="severity" /></td><td>{label(c.problem_type)}</td><td><div className="tagList">{(c.tags ?? []).map(item => <span key={item}>{item}</span>)}</div></td><td><code>{c.session_id ? c.session_id.slice(0, 8) + '-' : '-'}</code></td><td><Badge value={c.ai_analysis_status} /></td></tr>)}</tbody></table>
         <div className="paginationBar">
           <span>{t.pageSummary.replace('{page}', String(page)).replace('{pages}', String(pageCount)).replace('{total}', String(cases.length))}</span>
           <div>
@@ -219,7 +219,7 @@ function CaseDetailPanel({ caseId, knownProblemTypes, onChanged }: { caseId: str
       {chatSessionId && <SessionChatModal sessionId={chatSessionId} onClose={() => setChatSessionId(null)} />}
       <h3>{t.sceneDescription}</h3>
       <div className="caseInfoGrid">
-        <label>{t.sceneDescription}<textarea value={caseForm.scene_description} onChange={e => updateCaseForm('scene_description', e.target.value)} /></label>
+        <label>{t.sceneDescription}<RichTextEditor value={caseForm.scene_description} onChange={v => updateCaseForm('scene_description', v)} placeholder={t.sceneDescription} /></label>
         <label>{t.expectedResult}<textarea value={caseForm.expected_result} onChange={e => updateCaseForm('expected_result', e.target.value)} /></label>
         <label>{t.actualResult}<textarea value={caseForm.actual_result} onChange={e => updateCaseForm('actual_result', e.target.value)} /></label>
         <label>{t.severity}<select value={caseForm.severity} onChange={e => updateCaseForm('severity', e.target.value)}>{CASE_SEVERITIES.map(item => <option key={item} value={item}>{label(item)}</option>)}</select></label>
@@ -227,7 +227,7 @@ function CaseDetailPanel({ caseId, knownProblemTypes, onChanged }: { caseId: str
         {selectedProblemTypeValue(caseForm.problem_type) === CUSTOM_PROBLEM_TYPE && <label>{t.customProblemType}<input value={caseForm.problem_type} onChange={e => updateCaseForm('problem_type', e.target.value)} placeholder={t.customProblemTypePlaceholder} maxLength={128} /></label>}
         <label>{t.reproducible}<select value={caseForm.reproducible} onChange={e => updateCaseForm('reproducible', e.target.value)}><option value="">{t.reproducibleUnknown}</option><option value="true">{t.reproducibleYes}</option><option value="false">{t.reproducibleNo}</option></select></label>
         <label>{t.feedbackReporter}<input value={caseForm.feedback_reporter} onChange={e => updateCaseForm('feedback_reporter', e.target.value)} /></label>
-        <label>{t.responsibleOwner}<input value={caseForm.responsible_owner} onChange={e => updateCaseForm('responsible_owner', e.target.value)} /></label>
+        <label>{t.responsibleOwner}<ResponsibleOwnerSelect value={caseForm.responsible_owner} onChange={v => updateCaseForm('responsible_owner', v)} /></label>
         <label>{t.tags}<input value={caseForm.tags} onChange={e => updateCaseForm('tags', e.target.value)} placeholder={t.tagsPlaceholder} /></label>
         <label>{t.closurePractice}<textarea value={caseForm.closure_practice} onChange={e => updateCaseForm('closure_practice', e.target.value)} /></label>
         <label>{t.feedbackAcceptanceConclusion}<textarea value={caseForm.feedback_acceptance_conclusion} onChange={e => updateCaseForm('feedback_acceptance_conclusion', e.target.value)} /></label>

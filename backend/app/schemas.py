@@ -75,6 +75,11 @@ class SessionImport(BaseModel):
     raw: dict[str, Any] | None = None
 
 
+class PaginatedSessionRead(BaseModel):
+    items: list[SessionRead]
+    total: int
+
+
 class SessionRead(ORMModel):
     id: str
     external_session_id: str | None
@@ -155,6 +160,11 @@ class CaseUpdate(BaseModel):
         return normalized
 
 
+class PaginatedCaseRead(BaseModel):
+    items: list[CaseRead]
+    total: int
+
+
 class CaseRead(ORMModel):
     id: str
     title: str
@@ -227,6 +237,19 @@ class CaseDetail(CaseRead):
     analyses: list[AIAnalysisRead] = Field(default_factory=list)
     events: list[CaseEventRead] = Field(default_factory=list)
     session: SessionRead | None = None
+
+
+
+class ResponsibleOwnerCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=255)
+    responsibility_area: str | None = None
+
+
+class ResponsibleOwnerRead(ORMModel):
+    id: str
+    name: str
+    responsibility_area: str | None
+    created_at: datetime
 
 
 class ExperienceCreate(BaseModel):

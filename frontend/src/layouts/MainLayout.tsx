@@ -1,4 +1,4 @@
-import { BarChart3, Bot, ClipboardList, LogOut } from 'lucide-react';
+import { BarChart3, Bot, ClipboardList, LogOut, Settings as SettingsIcon } from 'lucide-react';
 import { t } from '../config/i18n';
 import type { User } from '../types/domain';
 import type { Tab } from '../routes/hashRoute';
@@ -6,12 +6,14 @@ import type { Tab } from '../routes/hashRoute';
 function pageSubtitle(tab: string): string {
   if (tab === 'dashboard') return t.dashboardSubtitle;
   if (tab === 'cases') return t.casesSubtitle;
+  if (tab === 'settings') return t.settingsSubtitle;
   return t.sessionsSubtitle;
 }
 
 function pageTitle(tab: string): string {
   if (tab === 'dashboard') return t.dashboard;
   if (tab === 'cases') return t.cases;
+  if (tab === 'settings') return t.settings;
   return t.sessions;
 }
 
@@ -38,6 +40,7 @@ export function MainLayout({
         <button className={tab === 'dashboard' ? 'active' : ''} onClick={() => onNavigate('dashboard')}><BarChart3 size={18} /> {t.dashboard}</button>
         <button className={tab === 'cases' ? 'active' : ''} onClick={() => onNavigate('cases')}><ClipboardList size={18} /> {t.cases}</button>
         <button className={tab === 'sessions' ? 'active' : ''} onClick={() => onNavigate('sessions')}><Bot size={18} /> {t.sessions}</button>
+        <button className={tab === 'settings' ? 'active' : ''} onClick={() => onNavigate('settings')}><SettingsIcon size={18} /> {t.settings}</button>
         <div className="spacer" />
         <p><span>{t.activeOperator}</span>{user?.display_name}</p>
         <button onClick={onLogout}><LogOut size={18} /> {t.logout}</button>

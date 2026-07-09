@@ -1,12 +1,14 @@
+import { RichTextEditor } from '../../../components/RichTextEditor';
 import type { SyntheticEvent } from 'react';
 import { useState } from 'react';
 import { X } from 'lucide-react';
 import { label, t } from '../../../config/i18n';
-import { request, requestForm } from '../../../core/api/client';
+import { ApiError, request, requestForm } from '../../../core/api/client';
 import { parseTags } from '../../../core/utils/format';
 import type { Case, Session } from '../../../types/domain';
 import { CASE_SEVERITIES, CUSTOM_PROBLEM_TYPE } from '../constants';
 import { problemTypeOptions } from '../utils';
+import { ResponsibleOwnerSelect } from './ResponsibleOwnerSelect';
 
 type CreateCaseModalProps = {
   knownProblemTypes: string[];
@@ -71,8 +73,8 @@ export function CreateCaseModal({ knownProblemTypes, initialSession, onClose, on
         }),
       });
       await onCreated(created.id);
-    } catch {
-      setError(t.createCaseFailed);
+    } catch (exc) {
+      setError(exc instanceof ApiError && exc.status === 409 ? t.sessionAlreadyExists : t.createCaseFailed);
     } finally {
       setSubmitting(false);
     }
@@ -90,7 +92,7 @@ export function CreateCaseModal({ knownProblemTypes, initialSession, onClose, on
         </header>
         <div className="caseCreateBody">
           <label>{t.title}<input value={title} onChange={e => setTitle(e.target.value)} placeholder={t.caseTitlePlaceholder} /></label>
-          <label>{t.sceneDescription}<textarea value={sceneDescription} onChange={e => setSceneDescription(e.target.value)} /></label>
+          <label>{t.sceneDescription}<RichTextEditor value={sceneDescription} onChange={setSceneDescription} placeholder={t.sceneDescription} /></label>
           <label>{t.expectedResult}<textarea value={expectedResult} onChange={e => setExpectedResult(e.target.value)} /></label>
           <label>{t.actualResult}<textarea value={actualResult} onChange={e => setActualResult(e.target.value)} /></label>
           <label>{t.severity}<select value={severity} onChange={e => setSeverity(e.target.value)}>{CASE_SEVERITIES.map(item => <option key={item} value={item}>{label(item)}</option>)}</select></label>
@@ -98,7 +100,7 @@ export function CreateCaseModal({ knownProblemTypes, initialSession, onClose, on
           {problemType === CUSTOM_PROBLEM_TYPE && <label>{t.customProblemType}<input value={customProblemType} onChange={e => setCustomProblemType(e.target.value)} placeholder={t.customProblemTypePlaceholder} maxLength={128} /></label>}
           <label>{t.reproducible}<select value={reproducible} onChange={e => setReproducible(e.target.value)}><option value="">{t.reproducibleUnknown}</option><option value="true">{t.reproducibleYes}</option><option value="false">{t.reproducibleNo}</option></select></label>
           <label>{t.feedbackReporter}<input value={feedbackReporter} onChange={e => setFeedbackReporter(e.target.value)} /></label>
-          <label>{t.responsibleOwner}<input value={responsibleOwner} onChange={e => setResponsibleOwner(e.target.value)} /></label>
+          <label>{t.responsibleOwner}<ResponsibleOwnerSelect value={responsibleOwner} onChange={setResponsibleOwner} /></label>
           <label>{t.tags}<input value={tags} onChange={e => setTags(e.target.value)} placeholder={t.tagsPlaceholder} /></label>
           {!usesExistingSession && <label>{t.sessionRecordFile}<input type="file" accept=".json,.jsonl,application/json,application/jsonl,text/plain" required onChange={e => setFile(e.target.files?.[0] ?? null)} /></label>}
           {error && <div className="error">{error}</div>}

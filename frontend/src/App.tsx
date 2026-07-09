@@ -4,6 +4,7 @@ import { Login } from './modules/auth';
 import { Cases } from './modules/cases';
 import { Dashboard } from './modules/dashboard';
 import { Sessions } from './modules/sessions';
+import { Settings } from './modules/settings';
 import { request } from './core/api/client';
 import { currentRoute, routeHash, type RouteState, type Tab } from './routes/hashRoute';
 import type { User } from './types/domain';
@@ -36,7 +37,7 @@ export function App() {
     setToken(null);
   }
   if (!token) return <Login onLogin={() => setToken(localStorage.getItem('hq_token'))} />;
-  const content = tab === 'dashboard' ? <Dashboard /> : tab === 'sessions' ? <Sessions onCaseCreated={caseId => navigate('cases', caseId)} /> : <Cases selectedCaseId={route.caseId} onSelectCase={caseId => navigate('cases', caseId)} />;
+  const content = tab === 'dashboard' ? <Dashboard /> : tab === 'settings' ? <Settings /> : tab === 'sessions' ? <Sessions onCaseCreated={caseId => navigate('cases', caseId)} /> : <Cases selectedCaseId={route.caseId} onSelectCase={caseId => navigate('cases', caseId)} />;
   return (
     <MainLayout tab={tab} user={user} onNavigate={navigate} onLogout={logout}>
       {content}

@@ -31,6 +31,7 @@ services:
       OAUTH_USERINFO_URL: ${OAUTH_USERINFO_URL}
       OAUTH_EMAIL_URL: ${OAUTH_EMAIL_URL}
       OAUTH_SCOPE: ${OAUTH_SCOPE}
+      MAX_IMAGE_UPLOAD_SIZE_MB: ${MAX_IMAGE_UPLOAD_SIZE_MB:-20}
       BOOTSTRAP_ADMIN_EMAIL: ${BOOTSTRAP_ADMIN_EMAIL}
       BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD}
       BOOTSTRAP_ADMIN_NAME: ${BOOTSTRAP_ADMIN_NAME}
@@ -66,6 +67,8 @@ services:
 
   web:
     build: ./frontend
+    environment:
+      NGINX_CLIENT_MAX_BODY_SIZE: ${NGINX_CLIENT_MAX_BODY_SIZE:-20m}
     depends_on:
       api:
         condition: service_started

@@ -1,14 +1,14 @@
-from typing import Any
 import json
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile
-from sqlalchemy import select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.dependencies import get_current_user
 from app.models import AgentSession, Project, User
-from app.schemas import SessionImport, SessionRead
+from app.schemas import SessionImport, SessionRead, PaginatedSessionRead
 from app.services.claude_jsonl import convert_claude_jsonl_content
 from app.services.langfuse import write_langfuse_trace
 from app.services.opencode_export import convert_opencode_export_content
@@ -17,19 +17,40 @@ from app.services.storage import ObjectStorage
 router = APIRouter(prefix="/sessions", tags=["sessions"])
 
 
-@router.get("", response_model=list[SessionRead])
+@router.get("", response_model=PaginatedSessionRead)
 def list_sessions(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(30, ge=1, le=200),
     project_id: str | None = None,
     agent_type: str | None = None,
+    q: str | None = None,
     _: User = Depends(get_current_user),
     db: Session = Depends(get_db),
-) -> list[AgentSession]:
-    stmt = select(AgentSession).order_by(AgentSession.created_at.desc()).limit(200)
+) -> PaginatedSessionRead:
+    stmt = select(AgentSession).order_by(AgentSession.created_at.desc())
     if project_id:
         stmt = stmt.where(AgentSession.project_id == project_id)
     if agent_type:
         stmt = stmt.where(AgentSession.agent_type == agent_type)
-    return list(db.scalars(stmt))
+    if q and len(q.strip()) > 4:
+        keyword = f"%{q.strip()}%"
+        stmt = stmt.where(
+            or_(
+                AgentSession.id.ilike(keyword),
+                AgentSession.external_session_id.ilike(keyword),
+                AgentSession.langfuse_session_id.ilike(keyword),
+                AgentSession.langfuse_trace_id.ilike(keyword),
+                AgentSession.agent_type.ilike(keyword),
+                AgentSession.repository.ilike(keyword),
+                AgentSession.branch.ilike(keyword),
+                AgentSession.summary.ilike(keyword),
+            )
+        )
+    count_stmt = select(func.count()).select_from(stmt.subquery())
+    total = db.scalar(count_stmt) or 0
+    stmt = stmt.offset((page - 1) * page_size).limit(page_size)
+    items = list(db.scalars(stmt))
+    return PaginatedSessionRead(items=items, total=total)
 
 
 @router.get("/{session_id}", response_model=SessionRead)
@@ -63,6 +84,33 @@ async def import_session(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> AgentSession:
+    return await _persist_session(payload, current_user, db, update_existing=False)
+
+
+@router.put("/import", response_model=SessionRead)
+async def update_imported_session(
+    payload: SessionImport,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> AgentSession:
+    return await _persist_session(payload, current_user, db, update_existing=True)
+
+
+async def _persist_session(
+    payload: SessionImport,
+    current_user: User,
+    db: Session,
+    *,
+    update_existing: bool,
+) -> AgentSession:
+    existing = _find_existing_session(payload, db)
+    if existing and not update_existing:
+        raise HTTPException(status_code=409, detail={"message": "Session already exists", "session_id": existing.id})
+    if update_existing and not existing:
+        if not _session_identity(payload):
+            raise HTTPException(status_code=400, detail="Session id is required for PUT updates")
+        raise HTTPException(status_code=404, detail="Session not found")
+
     user = current_user
     if payload.user_email:
         user = db.scalar(select(User).where(User.email == payload.user_email)) or current_user
@@ -86,37 +134,54 @@ async def import_session(
     except Exception as exc:  # noqa: BLE001
         payload.metadata["langfuse_write_warning"] = str(exc)
 
-    session = AgentSession(
-        external_session_id=payload.external_session_id,
-        langfuse_session_id=langfuse_session_id,
-        langfuse_trace_id=langfuse_trace_id,
-        langfuse_url=langfuse_url,
-        agent_type=payload.agent_type,
-        user_id=user.id,
-        project_id=project.id if project else None,
-        repository=payload.repository,
-        branch=payload.branch,
-        commit_sha=payload.commit_sha,
-        started_at=payload.started_at,
-        ended_at=payload.ended_at,
-        source=payload.source,
-        raw_artifact_uri=raw_uri,
-        summary=payload.summary,
-        metadata_json={
-            **payload.metadata,
-            "user_input": payload.user_input,
-            "assistant_output": payload.assistant_output,
-            "tool_calls": payload.tool_calls,
-            "shell_commands": payload.shell_commands,
-            "file_edits": payload.file_edits,
-            "errors": payload.errors,
-            "git_diff": payload.git_diff,
-        },
-    )
-    db.add(session)
+    session = existing or AgentSession()
+    session.external_session_id = payload.external_session_id
+    session.langfuse_session_id = langfuse_session_id
+    session.langfuse_trace_id = langfuse_trace_id
+    session.langfuse_url = langfuse_url
+    session.agent_type = payload.agent_type
+    session.user_id = user.id if user else None
+    session.project_id = project.id if project else None
+    session.repository = payload.repository
+    session.branch = payload.branch
+    session.commit_sha = payload.commit_sha
+    session.started_at = payload.started_at
+    session.ended_at = payload.ended_at
+    session.source = payload.source
+    session.raw_artifact_uri = raw_uri
+    session.summary = payload.summary
+    session.metadata_json = {
+        **payload.metadata,
+        "user_input": payload.user_input,
+        "assistant_output": payload.assistant_output,
+        "tool_calls": payload.tool_calls,
+        "shell_commands": payload.shell_commands,
+        "file_edits": payload.file_edits,
+        "errors": payload.errors,
+        "git_diff": payload.git_diff,
+    }
+    if not existing:
+        db.add(session)
     db.commit()
     db.refresh(session)
     return session
+
+
+def _find_existing_session(payload: SessionImport, db: Session) -> AgentSession | None:
+    identity = _session_identity(payload)
+    if not identity:
+        return None
+    field, value = identity
+    column = AgentSession.external_session_id if field == "external_session_id" else AgentSession.langfuse_session_id
+    return db.scalar(select(AgentSession).where(column == value).order_by(AgentSession.created_at.desc()))
+
+
+def _session_identity(payload: SessionImport) -> tuple[str, str] | None:
+    if payload.external_session_id:
+        return ("external_session_id", payload.external_session_id)
+    if payload.langfuse_session_id:
+        return ("langfuse_session_id", payload.langfuse_session_id)
+    return None
 
 
 @router.post("/upload", response_model=SessionRead)
@@ -125,12 +190,26 @@ async def upload_session_file(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> AgentSession:
+    payload = await _parse_harnessquest_upload(file)
+    return await import_session(payload, current_user, db)
+
+
+@router.put("/upload", response_model=SessionRead)
+async def update_session_file(
+    file: UploadFile,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> AgentSession:
+    payload = await _parse_harnessquest_upload(file)
+    return await update_imported_session(payload, current_user, db)
+
+
+async def _parse_harnessquest_upload(file: UploadFile) -> SessionImport:
     content = await file.read()
     try:
-        payload = SessionImport.model_validate(json.loads(content.decode("utf-8")))
+        return SessionImport.model_validate(json.loads(content.decode("utf-8")))
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"Invalid JSON payload: {exc}") from exc
-    return await import_session(payload, current_user, db)
 
 
 @router.post("/upload/auto", response_model=SessionRead)
@@ -140,6 +219,22 @@ async def upload_auto_session_file(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> AgentSession:
+    payload = await _parse_auto_upload(file, project_name, current_user)
+    return await import_session(payload, current_user, db)
+
+
+@router.put("/upload/auto", response_model=SessionRead)
+async def update_auto_session_file(
+    file: UploadFile,
+    project_name: str | None = None,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> AgentSession:
+    payload = await _parse_auto_upload(file, project_name, current_user)
+    return await update_imported_session(payload, current_user, db)
+
+
+async def _parse_auto_upload(file: UploadFile, project_name: str | None, current_user: User) -> SessionImport:
     content = await file.read()
     text = content.decode("utf-8")
     filename = file.filename or "agent-session"
@@ -153,8 +248,8 @@ async def upload_auto_session_file(
                 project_name=project_name,
                 user_email=current_user.email,
             )
-            return await import_session(SessionImport.model_validate(payload_data), current_user, db)
-        except Exception as exc:
+            return SessionImport.model_validate(payload_data)
+        except Exception as exc:  # noqa: BLE001
             errors.append(f"Claude Code JSONL: {exc}")
 
     try:
@@ -168,17 +263,20 @@ async def upload_auto_session_file(
                         project_name=project_name,
                         user_email=current_user.email,
                     )
-                    return await import_session(SessionImport.model_validate(payload_data), current_user, db)
-                except Exception as exc:
+                    return SessionImport.model_validate(payload_data)
+                except Exception as exc:  # noqa: BLE001
                     errors.append(f"opencode JSON: {exc}")
             try:
-                return await import_session(SessionImport.model_validate(data), current_user, db)
-            except Exception as exc:
+                return SessionImport.model_validate(data)
+            except Exception as exc:  # noqa: BLE001
                 errors.append(f"HarnessQuest JSON: {exc}")
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         errors.append(f"JSON object: {exc}")
 
-    detail = "Unable to identify session record format. Supported formats: Claude Code JSONL, opencode JSON export, HarnessQuest JSON."
+    detail = (
+        "Unable to identify session record format. Supported formats: "
+        "Claude Code JSONL, opencode JSON export, HarnessQuest JSON."
+    )
     if errors:
         detail = f"{detail} Tried: {'; '.join(errors)}"
     raise HTTPException(status_code=400, detail=detail)
@@ -191,6 +289,22 @@ async def upload_claude_jsonl_file(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> AgentSession:
+    payload = await _parse_claude_jsonl_upload(file, project_name, current_user)
+    return await import_session(payload, current_user, db)
+
+
+@router.put("/upload/claude-jsonl", response_model=SessionRead)
+async def update_claude_jsonl_file(
+    file: UploadFile,
+    project_name: str | None = None,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> AgentSession:
+    payload = await _parse_claude_jsonl_upload(file, project_name, current_user)
+    return await update_imported_session(payload, current_user, db)
+
+
+async def _parse_claude_jsonl_upload(file: UploadFile, project_name: str | None, current_user: User) -> SessionImport:
     content = await file.read()
     try:
         payload_data = convert_claude_jsonl_content(
@@ -199,10 +313,9 @@ async def upload_claude_jsonl_file(
             project_name=project_name,
             user_email=current_user.email,
         )
-        payload = SessionImport.model_validate(payload_data)
+        return SessionImport.model_validate(payload_data)
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"Invalid Claude Code JSONL payload: {exc}") from exc
-    return await import_session(payload, current_user, db)
 
 
 def _looks_like_claude_jsonl(content: str) -> bool:
@@ -230,7 +343,10 @@ def _looks_like_opencode_json(data: dict[str, Any]) -> bool:
     if isinstance(session, dict) and isinstance(messages, list):
         return True
     if isinstance(messages, list):
-        return any(isinstance(item, dict) and isinstance(item.get("info"), dict) and isinstance(item.get("parts"), list) for item in messages)
+        return any(
+            isinstance(item, dict) and isinstance(item.get("info"), dict) and isinstance(item.get("parts"), list)
+            for item in messages
+        )
     return False
 
 
@@ -241,6 +357,22 @@ async def upload_opencode_json_file(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> AgentSession:
+    payload = await _parse_opencode_json_upload(file, project_name, current_user)
+    return await import_session(payload, current_user, db)
+
+
+@router.put("/upload/opencode-json", response_model=SessionRead)
+async def update_opencode_json_file(
+    file: UploadFile,
+    project_name: str | None = None,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> AgentSession:
+    payload = await _parse_opencode_json_upload(file, project_name, current_user)
+    return await update_imported_session(payload, current_user, db)
+
+
+async def _parse_opencode_json_upload(file: UploadFile, project_name: str | None, current_user: User) -> SessionImport:
     content = await file.read()
     try:
         payload_data = convert_opencode_export_content(
@@ -249,7 +381,6 @@ async def upload_opencode_json_file(
             project_name=project_name,
             user_email=current_user.email,
         )
-        payload = SessionImport.model_validate(payload_data)
+        return SessionImport.model_validate(payload_data)
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"Invalid opencode JSON export payload: {exc}") from exc
-    return await import_session(payload, current_user, db)
