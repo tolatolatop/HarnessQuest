@@ -75,6 +75,11 @@ class SessionImport(BaseModel):
     raw: dict[str, Any] | None = None
 
 
+class PaginatedSessionRead(BaseModel):
+    items: list[SessionRead]
+    total: int
+
+
 class SessionRead(ORMModel):
     id: str
     external_session_id: str | None
@@ -153,6 +158,11 @@ class CaseUpdate(BaseModel):
         if len(normalized) > 128:
             raise ValueError("problem_type cannot exceed 128 characters")
         return normalized
+
+
+class PaginatedCaseRead(BaseModel):
+    items: list[CaseRead]
+    total: int
 
 
 class CaseRead(ORMModel):

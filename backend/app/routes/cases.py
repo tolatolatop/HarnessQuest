@@ -1,7 +1,7 @@
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import cast, or_, select
+from sqlalchemy import cast, func, or_, select
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Session, selectinload
 
@@ -9,7 +9,7 @@ from app.db import get_db
 from app.dependencies import get_current_user
 from app.models import AgentCase, AgentSession, AIAnalysis, AIAnalysisStatus, CaseEvent, CaseStatus, ExperienceItem, User
 from app.queue import get_queue
-from app.schemas import AIAnalysisFeedback, CaseCreate, CaseDetail, CaseEventCreate, CaseRead, CaseUpdate, ExperienceCreate, ExperienceRead
+from app.schemas import AIAnalysisFeedback, CaseCreate, CaseDetail, CaseEventCreate, CaseRead, CaseUpdate, ExperienceCreate, ExperienceRead, PaginatedCaseRead
 from app.services.analyzer import run_case_analysis
 
 router = APIRouter(prefix="/cases", tags=["cases"])
@@ -23,8 +23,10 @@ ALLOWED_TRANSITIONS = {
 }
 
 
-@router.get("", response_model=list[CaseRead])
+@router.get("", response_model=PaginatedCaseRead)
 def list_cases(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(10, ge=1, le=100),
     status: CaseStatus | None = None,
     state: str | None = None,
     project_id: str | None = None,
@@ -36,8 +38,8 @@ def list_cases(
     session_id: str | None = None,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
-) -> list[AgentCase]:
-    stmt = select(AgentCase).order_by(AgentCase.created_at.desc()).limit(300)
+) -> PaginatedCaseRead:
+    stmt = select(AgentCase).order_by(AgentCase.created_at.desc())
     if status:
         stmt = stmt.where(AgentCase.status == status)
     if state == "open":
@@ -73,7 +75,11 @@ def list_cases(
             )
     if session_id and len(session_id.strip()) > 4:
         stmt = stmt.where(AgentCase.session_id == session_id.strip())
-    return list(db.scalars(stmt))
+    count_stmt = select(func.count()).select_from(stmt.subquery())
+    total = db.scalar(count_stmt) or 0
+    stmt = stmt.offset((page - 1) * page_size).limit(page_size)
+    items = list(db.scalars(stmt))
+    return PaginatedCaseRead(items=items, total=total)
 
 
 @router.post("", response_model=CaseRead)

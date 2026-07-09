@@ -6,6 +6,8 @@ import { label, t } from '../../config/i18n';
 import { request } from '../../core/api/client';
 import { parseTags, relativeTime } from '../../core/utils/format';
 import type { Analysis, Case, CaseDetail } from '../../types/domain';
+
+type PaginatedResponse<T> = { items: T[]; total: number };
 import { SessionChatModal } from '../sessions/components/SessionChatModal';
 import { CreateCaseModal } from './components/CreateCaseModal';
 import { ResponsibleOwnerSelect } from './components/ResponsibleOwnerSelect';
@@ -18,10 +20,10 @@ export function Cases({ selectedCaseId, onSelectCase }: { selectedCaseId: string
   const [query, setQuery] = useState('');
   const [suggestionsOpen, setSuggestionsOpen] = useState(false);
   const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
   const filters = useMemo(() => parseCaseQuery(query), [query]);
-  const pageSize = 8;
-  const pageCount = Math.max(1, Math.ceil(cases.length / pageSize));
-  const visibleCases = cases.slice((page - 1) * pageSize, page * pageSize);
+  const pageSize = 10;
+  const pageCount = Math.max(1, Math.ceil(total / pageSize));
   const load = useCallback(() => {
     const params = new URLSearchParams();
     if (filters.q.trim()) params.set('q', filters.q.trim());
@@ -31,11 +33,13 @@ export function Cases({ selectedCaseId, onSelectCase }: { selectedCaseId: string
     const createdTo = formatDateTimeFilter(filters.createdTo, true);
     if (createdFrom) params.set('created_from', createdFrom);
     if (createdTo) params.set('created_to', createdTo);
+    params.set('page', String(page));
+    params.set('page_size', String(pageSize));
     filters.tags.forEach(item => params.append('tag', item));
     if (filters.session.trim()) params.set('session_id', filters.session.trim());
     const suffix = params.toString();
-    return request<Case[]>(`/cases${suffix ? `?${suffix}` : ''}`).then(setCases);
-  }, [filters.createdFrom, filters.createdTo, filters.q, filters.session, filters.state, filters.status, filters.tags]);
+    return request<PaginatedResponse<Case>>(`/cases${suffix ? `?${suffix}` : ''}`).then(data => { setCases(data.items); setTotal(data.total); });
+  }, [filters.createdFrom, filters.createdTo, filters.q, filters.session, filters.state, filters.status, filters.tags, page]);
   useEffect(() => {
     void load();
   }, [load]);
@@ -45,13 +49,6 @@ export function Cases({ selectedCaseId, onSelectCase }: { selectedCaseId: string
   useEffect(() => {
     setPage(current => Math.min(current, pageCount));
   }, [pageCount]);
-  useEffect(() => {
-    if (!selectedCaseId) return;
-    const index = cases.findIndex(item => item.id === selectedCaseId);
-    if (index >= 0) {
-      setPage(Math.floor(index / pageSize) + 1);
-    }
-  }, [cases, selectedCaseId]);
   async function created(caseId: string) {
     await load();
     setPage(1);
@@ -84,7 +81,7 @@ export function Cases({ selectedCaseId, onSelectCase }: { selectedCaseId: string
             </div>
           )}
         </div>
-        <table><thead><tr><th>{t.title}</th><th>{t.createdAt}</th><th>{t.status}</th><th>{t.severity}</th><th>{t.type}</th><th>{t.tags}</th><th>{'会话 ID'}</th><th>{t.ai}</th></tr></thead><tbody>{visibleCases.map(c => <tr key={c.id} onClick={() => onSelectCase(c.id)} className={selectedCaseId === c.id ? 'selected' : ''}><td><strong className="caseTitle">{c.title}</strong></td><td><span className="relativeTime">{relativeTime(c.created_at)}</span></td><td><Badge value={c.status} type="status" /></td><td><Badge value={c.severity} type="severity" /></td><td>{label(c.problem_type)}</td><td><div className="tagList">{(c.tags ?? []).map(item => <span key={item}>{item}</span>)}</div></td><td><code>{c.session_id ? c.session_id.slice(0, 8) + '-' : '-'}</code></td><td><Badge value={c.ai_analysis_status} /></td></tr>)}</tbody></table>
+        <table><thead><tr><th>{t.title}</th><th>{t.createdAt}</th><th>{t.status}</th><th>{t.severity}</th><th>{t.type}</th><th>{t.tags}</th><th>{'会话 ID'}</th><th>{t.ai}</th></tr></thead><tbody>{cases.map(c => <tr key={c.id} onClick={() => onSelectCase(c.id)} className={selectedCaseId === c.id ? 'selected' : ''}><td><strong className="caseTitle">{c.title}</strong></td><td><span className="relativeTime">{relativeTime(c.created_at)}</span></td><td><Badge value={c.status} type="status" /></td><td><Badge value={c.severity} type="severity" /></td><td>{label(c.problem_type)}</td><td><div className="tagList">{(c.tags ?? []).map(item => <span key={item}>{item}</span>)}</div></td><td><code>{c.session_id ? c.session_id.slice(0, 8) + '-' : '-'}</code></td><td><Badge value={c.ai_analysis_status} /></td></tr>)}</tbody></table>
         <div className="paginationBar">
           <span>{t.pageSummary.replace('{page}', String(page)).replace('{pages}', String(pageCount)).replace('{total}', String(cases.length))}</span>
           <div>

@@ -2,13 +2,13 @@ import json
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.dependencies import get_current_user
 from app.models import AgentSession, Project, User
-from app.schemas import SessionImport, SessionRead
+from app.schemas import SessionImport, SessionRead, PaginatedSessionRead
 from app.services.claude_jsonl import convert_claude_jsonl_content
 from app.services.langfuse import write_langfuse_trace
 from app.services.opencode_export import convert_opencode_export_content
@@ -17,15 +17,17 @@ from app.services.storage import ObjectStorage
 router = APIRouter(prefix="/sessions", tags=["sessions"])
 
 
-@router.get("", response_model=list[SessionRead])
+@router.get("", response_model=PaginatedSessionRead)
 def list_sessions(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(30, ge=1, le=200),
     project_id: str | None = None,
     agent_type: str | None = None,
     q: str | None = None,
     _: User = Depends(get_current_user),
     db: Session = Depends(get_db),
-) -> list[AgentSession]:
-    stmt = select(AgentSession).order_by(AgentSession.created_at.desc()).limit(200)
+) -> PaginatedSessionRead:
+    stmt = select(AgentSession).order_by(AgentSession.created_at.desc())
     if project_id:
         stmt = stmt.where(AgentSession.project_id == project_id)
     if agent_type:
@@ -44,7 +46,11 @@ def list_sessions(
                 AgentSession.summary.ilike(keyword),
             )
         )
-    return list(db.scalars(stmt))
+    count_stmt = select(func.count()).select_from(stmt.subquery())
+    total = db.scalar(count_stmt) or 0
+    stmt = stmt.offset((page - 1) * page_size).limit(page_size)
+    items = list(db.scalars(stmt))
+    return PaginatedSessionRead(items=items, total=total)
 
 
 @router.get("/{session_id}", response_model=SessionRead)

@@ -3,28 +3,43 @@ import { useEffect, useState } from 'react';
 import { ClipboardPlus, RotateCcw, Search, Upload, X } from 'lucide-react';
 import { t } from '../../config/i18n';
 import { ApiError, request, requestForm } from '../../core/api/client';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { relativeTime } from '../../core/utils/format';
 import type { Session } from '../../types/domain';
 import { CreateCaseModal } from '../cases/components/CreateCaseModal';
 import { SessionChatModal } from './components/SessionChatModal';
+
+type PaginatedResponse<T> = { items: T[]; total: number };
 
 export function Sessions({ onCaseCreated }: { onCaseCreated?: (caseId: string) => void }) {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   const [caseSession, setCaseSession] = useState<Session | null>(null);
   const [query, setQuery] = useState('');
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
   const [uploadOpen, setUploadOpen] = useState(false);
+  const pageSize = 30;
+  const pageCount = Math.max(1, Math.ceil(total / pageSize));
   const load = () => {
     const params = new URLSearchParams();
+    params.set('page', String(page));
+    params.set('page_size', String(pageSize));
     if (query.trim() && query.trim().length > 4) params.set('q', query.trim());
     const suffix = params.toString();
-    return request<Session[]>(`/sessions${suffix ? `?${suffix}` : ''}`).then(setSessions);
+    return request<PaginatedResponse<Session>>(`/sessions${suffix ? `?${suffix}` : ''}`).then(data => { setSessions(data.items); setTotal(data.total); });
   };
   useEffect(() => {
     void load();
   }, []);
   useEffect(() => {
     void load();
+  }, [query]);
+  useEffect(() => {
+    void load();
+  }, [page]);
+  useEffect(() => {
+    setPage(1);
   }, [query]);
 
   async function uploaded(sessionId: string) {
@@ -56,6 +71,13 @@ export function Sessions({ onCaseCreated }: { onCaseCreated?: (caseId: string) =
       {uploadOpen && <UploadSessionModal onClose={() => setUploadOpen(false)} onUploaded={uploaded} />}
       {caseSession && <CreateCaseModal initialSession={caseSession} knownProblemTypes={[]} onClose={() => setCaseSession(null)} onCreated={caseCreated} />}
       {selected && <SessionChatModal sessionId={selected} onClose={() => setSelected(null)} />}
+      <div className="paginationBar">
+        <span>{t.pageSummary.replace('{page}', String(page)).replace('{pages}', String(pageCount)).replace('{total}', String(total))}</span>
+        <div>
+          <button className="iconButton" aria-label={t.previousPage} disabled={page <= 1} onClick={() => setPage(current => Math.max(1, current - 1))}><ChevronLeft size={16} /></button>
+          <button className="iconButton" aria-label={t.nextPage} disabled={page >= pageCount} onClick={() => setPage(current => Math.min(pageCount, current + 1))}><ChevronRight size={16} /></button>
+        </div>
+      </div>
     </section>
   );
 }

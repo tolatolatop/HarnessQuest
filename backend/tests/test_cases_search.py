@@ -56,9 +56,9 @@ def test_list_cases_with_session_id_returns_matching_cases(
     resp = client.get(f"{BASE}?session_id={session_id}")
     assert resp.status_code == HTTP_OK
     data = resp.json()
-    assert len(data) == 1
-    assert data[0]["session_id"] == session_id
-    assert data[0]["title"] == "Linked case"
+    assert len(data["items"]) == 1
+    assert data["items"][0]["session_id"] == session_id
+    assert data["items"][0]["title"] == "Linked case"
 
 
 def test_list_cases_with_session_id_returns_empty_when_no_match(
@@ -67,7 +67,7 @@ def test_list_cases_with_session_id_returns_empty_when_no_match(
     """session_id filter returns empty list for non-existent session."""
     resp = client.get(f"{BASE}?session_id=nonexistent-session-id-xyz")
     assert resp.status_code == HTTP_OK
-    assert resp.json() == []
+    assert resp.json()["items"] == []
 
 
 def test_list_cases_session_id_min_length_guard(
@@ -81,12 +81,12 @@ def test_list_cases_session_id_min_length_guard(
     resp = client.get(f"{BASE}?session_id=abcd")
     assert resp.status_code == HTTP_OK
     data = resp.json()
-    assert len(data) >= 1
+    assert len(data["items"]) >= 1
 
     # Query with a 5-char session_id -- should filter but no match
     resp = client.get(f"{BASE}?session_id=nonex")
     assert resp.status_code == HTTP_OK
-    assert resp.json() == []
+    assert resp.json()["items"] == []
 
 
 def test_list_cases_session_id_combined_with_status(
@@ -103,10 +103,10 @@ def test_list_cases_session_id_combined_with_status(
     resp = client.get(f"{BASE}?session_id={session_id}&status=to_triage")
     assert resp.status_code == HTTP_OK
     data = resp.json()
-    assert len(data) == 1
-    assert data[0]["id"] == case_id
+    assert len(data["items"]) == 1
+    assert data["items"][0]["id"] == case_id
 
     # Query with session_id + non-matching status
     resp = client.get(f"{BASE}?session_id={session_id}&status=closed")
     assert resp.status_code == HTTP_OK
-    assert resp.json() == []
+    assert resp.json()["items"] == []

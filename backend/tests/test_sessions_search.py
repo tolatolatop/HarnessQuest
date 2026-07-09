@@ -46,13 +46,13 @@ def test_list_sessions_q_matches_id_prefix(
     resp = client.get(f"{BASE}?q=alpha")
     assert resp.status_code == HTTP_OK
     data = resp.json()
-    assert len(data) == 1
-    assert data[0]["summary"] == "Alpha summary"
+    assert len(data["items"]) == 1
+    assert data["items"][0]["summary"] == "Alpha summary"
 
     # Search by id prefix that doesn't exist
     resp = client.get(f"{BASE}?q=gamma")
     assert resp.status_code == HTTP_OK
-    assert resp.json() == []
+    assert resp.json()["items"] == []
 
 
 def test_list_sessions_q_matches_summary(
@@ -65,8 +65,8 @@ def test_list_sessions_q_matches_summary(
     resp = client.get(f"{BASE}?q=timeout")
     assert resp.status_code == HTTP_OK
     data = resp.json()
-    assert len(data) == 1
-    assert data[0]["summary"] == "Connection timeout error"
+    assert len(data["items"]) == 1
+    assert data["items"][0]["summary"] == "Connection timeout error"
 
 
 def test_list_sessions_q_ignored_below_five_chars(
@@ -80,12 +80,12 @@ def test_list_sessions_q_ignored_below_five_chars(
     resp = client.get(f"{BASE}?q=abcd")
     assert resp.status_code == HTTP_OK
     data = resp.json()
-    assert len(data) >= 2
+    assert len(data["items"]) >= 2
 
     # 5-char q that doesn't match should return empty
     resp = client.get(f"{BASE}?q=nonex")
     assert resp.status_code == HTTP_OK
-    assert resp.json() == []
+    assert resp.json()["items"] == []
 
 
 def test_list_sessions_q_matches_external_session_id(
@@ -97,7 +97,7 @@ def test_list_sessions_q_matches_external_session_id(
     resp = client.get(f"{BASE}?q=special-001")
     assert resp.status_code == HTTP_OK
     data = resp.json()
-    assert len(data) == 1
+    assert len(data["items"]) == 1
 
 
 def test_list_sessions_q_matches_branch(
@@ -110,5 +110,5 @@ def test_list_sessions_q_matches_branch(
     resp = client.get(f"{BASE}?q=user-auth")
     assert resp.status_code == HTTP_OK
     data = resp.json()
-    assert len(data) == 1
-    assert data[0]["branch"] == "feature/user-auth"
+    assert len(data["items"]) == 1
+    assert data["items"][0]["branch"] == "feature/user-auth"
