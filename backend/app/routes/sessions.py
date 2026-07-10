@@ -1,7 +1,7 @@
 import json
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 

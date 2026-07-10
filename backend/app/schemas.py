@@ -75,11 +75,6 @@ class SessionImport(BaseModel):
     raw: dict[str, Any] | None = None
 
 
-class PaginatedSessionRead(BaseModel):
-    items: list[SessionRead]
-    total: int
-
-
 class SessionRead(ORMModel):
     id: str
     external_session_id: str | None
@@ -97,6 +92,11 @@ class SessionRead(ORMModel):
     summary: str | None
     metadata_json: dict[str, Any]
     created_at: datetime
+
+
+class PaginatedSessionRead(BaseModel):
+    items: list[SessionRead]
+    total: int
 
 
 class CaseCreate(BaseModel):
@@ -160,11 +160,6 @@ class CaseUpdate(BaseModel):
         return normalized
 
 
-class PaginatedCaseRead(BaseModel):
-    items: list[CaseRead]
-    total: int
-
-
 class CaseRead(ORMModel):
     id: str
     title: str
@@ -193,6 +188,11 @@ class CaseRead(ORMModel):
     created_at: datetime
     updated_at: datetime
     closed_at: datetime | None
+
+
+class PaginatedCaseRead(BaseModel):
+    items: list[CaseRead]
+    total: int
 
 
 class AIAnalysisRead(ORMModel):
