@@ -594,13 +594,10 @@ tbody tr.selected {
 .caseInfoGrid {
   display: grid;
   gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
-.caseInfoGrid label:first-child,
-.caseInfoGrid label:nth-child(2),
-.caseInfoGrid label:nth-child(3),
-.caseInfoGrid label:nth-child(10),
-.caseInfoGrid label:nth-child(11) {
+.caseInfoGrid .caseInfoWide {
   grid-column: 1 / -1;
 }
 
@@ -851,6 +848,44 @@ tbody tr.selected {
   max-width: min(620px, calc(100vw - 32px));
   overflow: hidden;
   width: 100%;
+}
+
+.caseDetailOverlay {
+  padding: 4vh 2vw;
+}
+
+.caseDetailModal {
+  background: #fbfcf7;
+  border: 1px solid #aeb8b0;
+  border-radius: 8px;
+  box-shadow: 0 24px 80px rgba(20, 23, 21, 0.38);
+  display: flex;
+  flex-direction: column;
+  height: 92vh;
+  max-width: 1040px;
+  overflow: hidden;
+  width: min(92vw, 1040px);
+}
+
+.caseDetailLoading {
+  align-items: center;
+  height: auto;
+  justify-content: center;
+  min-height: 180px;
+}
+
+.caseDetailHeader {
+  flex: 0 0 auto;
+}
+
+.caseDetailBody {
+  overflow: auto;
+  padding: 20px 24px 28px;
+}
+
+.caseDetailBody > h2 {
+  margin-top: 0;
+  overflow-wrap: anywhere;
 }
 
 .caseCreateBody {
@@ -1221,6 +1256,28 @@ tbody tr.selected {
     max-height: calc(100vh - 24px);
     max-width: calc(100vw - 24px);
     width: calc(100vw - 24px);
+  }
+
+  .caseDetailOverlay {
+    padding: 12px;
+  }
+
+  .caseDetailModal {
+    height: calc(100vh - 24px);
+    max-width: calc(100vw - 24px);
+    width: calc(100vw - 24px);
+  }
+
+  .caseDetailBody {
+    padding: 16px;
+  }
+
+  .caseInfoGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .caseInfoGrid label {
+    grid-column: 1 / -1;
   }
 
   .chatMessage {

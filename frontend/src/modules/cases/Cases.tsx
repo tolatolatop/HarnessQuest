@@ -1,6 +1,6 @@
 import { RichTextEditor } from '../../components/RichTextEditor';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ChevronLeft, ChevronRight, PlayCircle, RotateCcw, Search, Upload } from 'lucide-react';
+import { ChevronLeft, ChevronRight, PlayCircle, RotateCcw, Search, Upload, X } from 'lucide-react';
 import { Badge } from '../../components/Badge';
 import { label, t } from '../../config/i18n';
 import { request } from '../../core/api/client';
@@ -61,8 +61,9 @@ export function Cases({ selectedCaseId, onSelectCase }: { selectedCaseId: string
     setQuery(current => `${current.trim()}${current.trim() ? ' ' : ''}${value} `);
     setSuggestionsOpen(true);
   }
+  const closeDetail = useCallback(() => onSelectCase(null), [onSelectCase]);
   return (
-    <div className="split">
+    <div>
       <section className="panel caseListPanel">
         <div className="panelHeader"><h2>{t.cases}</h2><button onClick={() => setCreateOpen(true)}><Upload size={16} /> {t.createCase}</button></div>
         <div className="caseSearchBox" onBlur={() => window.setTimeout(() => setSuggestionsOpen(false), 120)}>
@@ -91,12 +92,12 @@ export function Cases({ selectedCaseId, onSelectCase }: { selectedCaseId: string
         </div>
         {createOpen && <CreateCaseModal knownProblemTypes={cases.map(item => item.problem_type)} onClose={() => setCreateOpen(false)} onCreated={created} />}
       </section>
-      <CaseDetailPanel caseId={selectedCaseId} knownProblemTypes={cases.map(item => item.problem_type)} onChanged={load} />
+      <CaseDetailModal caseId={selectedCaseId} knownProblemTypes={cases.map(item => item.problem_type)} onChanged={load} onClose={closeDetail} />
     </div>
   );
 }
 
-function CaseDetailPanel({ caseId, knownProblemTypes, onChanged }: { caseId: string | null; knownProblemTypes: string[]; onChanged: () => void }) {
+function CaseDetailModal({ caseId, knownProblemTypes, onChanged, onClose }: { caseId: string | null; knownProblemTypes: string[]; onChanged: () => void; onClose: () => void }) {
   const [detail, setDetail] = useState<CaseDetail | null>(null);
   const [chatSessionId, setChatSessionId] = useState<string | null>(null);
   const [comment, setComment] = useState('');
@@ -104,6 +105,7 @@ function CaseDetailPanel({ caseId, knownProblemTypes, onChanged }: { caseId: str
   const [experienceMessage, setExperienceMessage] = useState('');
   const [experienceForm, setExperienceForm] = useState({ title: '', content: '', tags: '' });
   const [caseForm, setCaseForm] = useState({
+    title: '',
     scene_description: '',
     expected_result: '',
     actual_result: '',
@@ -131,6 +133,7 @@ function CaseDetailPanel({ caseId, knownProblemTypes, onChanged }: { caseId: str
   useEffect(() => {
     if (!detail) return;
     setCaseForm({
+      title: detail.title,
       scene_description: detail.scene_description ?? '',
       expected_result: detail.expected_result ?? '',
       actual_result: detail.actual_result ?? '',
@@ -144,8 +147,23 @@ function CaseDetailPanel({ caseId, knownProblemTypes, onChanged }: { caseId: str
       feedback_acceptance_conclusion: detail.feedback_acceptance_conclusion ?? '',
     });
   }, [detail]);
-  if (!caseId) return <section className="panel detail"><p className="muted">{t.selectCase}</p></section>;
-  if (!detail) return <section className="panel detail">{t.loading}</section>;
+  useEffect(() => {
+    if (!caseId) return;
+    const previousOverflow = document.body.style.overflow;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      if (chatSessionId) setChatSessionId(null);
+      else onClose();
+    };
+    document.body.style.overflow = 'hidden';
+    window.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [caseId, chatSessionId, onClose]);
+  if (!caseId) return null;
+  if (!detail) return <div className="modalOverlay" role="presentation" onMouseDown={onClose}><section className="caseDetailModal caseDetailLoading" role="dialog" aria-modal="true" aria-label={t.editCaseTitle} onMouseDown={e => e.stopPropagation()}>{t.loading}</section></div>;
   async function patch(status: string) {
     await request(`/cases/${caseId}`, { method: 'PATCH', body: JSON.stringify({ status }) });
     await load(); onChanged();
@@ -185,11 +203,17 @@ function CaseDetailPanel({ caseId, knownProblemTypes, onChanged }: { caseId: str
   }
   async function saveCaseInfo() {
     setCaseInfoMessage('');
+    const normalizedTitle = caseForm.title.trim();
+    if (!normalizedTitle) {
+      setCaseInfoMessage(t.caseTitleRequired);
+      return;
+    }
     try {
       const normalizedProblemType = caseForm.problem_type.trim() || 'other';
       await request(`/cases/${caseId}`, {
         method: 'PATCH',
         body: JSON.stringify({
+          title: normalizedTitle,
           scene_description: caseForm.scene_description || null,
           expected_result: caseForm.expected_result || null,
           actual_result: caseForm.actual_result || null,
@@ -211,17 +235,27 @@ function CaseDetailPanel({ caseId, knownProblemTypes, onChanged }: { caseId: str
     }
   }
   return (
-    <section className="panel detail">
-      <h2>{detail.title}</h2>
+    <div className="modalOverlay caseDetailOverlay" role="presentation" onMouseDown={onClose}>
+    <section className="caseDetailModal" role="dialog" aria-modal="true" aria-labelledby="case-detail-title" onMouseDown={e => e.stopPropagation()}>
+      <header className="modalHeader caseDetailHeader">
+        <div className="modalHeaderMain">
+          <div className="modalTitleRow"><span>{t.editCaseTitle}</span><strong>{detail.title}</strong></div>
+          <p>{t.caseEditSubtitle}</p>
+        </div>
+        <button className="iconButton" type="button" aria-label={t.closeModal} onClick={onClose}><X size={18} /></button>
+      </header>
+      <div className="caseDetailBody">
+      <h2 id="case-detail-title">{detail.title}</h2>
       <div className="chips"><Badge value={detail.status} type="status" /><Badge value={detail.severity} type="severity" /><Badge value={detail.problem_type} /></div>
       {detail.session?.langfuse_url && <a href={detail.session.langfuse_url} target="_blank">{t.openLangfuseTrace}</a>}
       {detail.session_id && <button onClick={() => setChatSessionId(detail.session_id ?? null)}>{t.showRawSession}</button>}
       {chatSessionId && <SessionChatModal sessionId={chatSessionId} onClose={() => setChatSessionId(null)} />}
       <h3>{t.sceneDescription}</h3>
       <div className="caseInfoGrid">
-        <label>{t.sceneDescription}<RichTextEditor value={caseForm.scene_description} onChange={v => updateCaseForm('scene_description', v)} placeholder={t.sceneDescription} /></label>
-        <label>{t.expectedResult}<textarea value={caseForm.expected_result} onChange={e => updateCaseForm('expected_result', e.target.value)} /></label>
-        <label>{t.actualResult}<textarea value={caseForm.actual_result} onChange={e => updateCaseForm('actual_result', e.target.value)} /></label>
+        <label className="caseInfoWide">{t.title}<input value={caseForm.title} onChange={e => updateCaseForm('title', e.target.value)} required maxLength={255} /></label>
+        <label className="caseInfoWide">{t.sceneDescription}<RichTextEditor value={caseForm.scene_description} onChange={v => updateCaseForm('scene_description', v)} placeholder={t.sceneDescription} /></label>
+        <label className="caseInfoWide">{t.expectedResult}<textarea value={caseForm.expected_result} onChange={e => updateCaseForm('expected_result', e.target.value)} /></label>
+        <label className="caseInfoWide">{t.actualResult}<textarea value={caseForm.actual_result} onChange={e => updateCaseForm('actual_result', e.target.value)} /></label>
         <label>{t.severity}<select value={caseForm.severity} onChange={e => updateCaseForm('severity', e.target.value)}>{CASE_SEVERITIES.map(item => <option key={item} value={item}>{label(item)}</option>)}</select></label>
         <label>{t.problemType}<select value={selectedProblemTypeValue(caseForm.problem_type)} onChange={e => updateCaseForm('problem_type', e.target.value === CUSTOM_PROBLEM_TYPE ? '' : e.target.value)}>{problemTypeOptions([...knownProblemTypes, detail.problem_type]).map(item => <option key={item} value={item}>{label(item)}</option>)}<option value={CUSTOM_PROBLEM_TYPE}>{t.customProblemType}</option></select></label>
         {selectedProblemTypeValue(caseForm.problem_type) === CUSTOM_PROBLEM_TYPE && <label>{t.customProblemType}<input value={caseForm.problem_type} onChange={e => updateCaseForm('problem_type', e.target.value)} placeholder={t.customProblemTypePlaceholder} maxLength={128} /></label>}
@@ -229,8 +263,8 @@ function CaseDetailPanel({ caseId, knownProblemTypes, onChanged }: { caseId: str
         <label>{t.feedbackReporter}<input value={caseForm.feedback_reporter} onChange={e => updateCaseForm('feedback_reporter', e.target.value)} /></label>
         <label>{t.responsibleOwner}<ResponsibleOwnerSelect value={caseForm.responsible_owner} onChange={v => updateCaseForm('responsible_owner', v)} /></label>
         <label>{t.tags}<input value={caseForm.tags} onChange={e => updateCaseForm('tags', e.target.value)} placeholder={t.tagsPlaceholder} /></label>
-        <label>{t.closurePractice}<textarea value={caseForm.closure_practice} onChange={e => updateCaseForm('closure_practice', e.target.value)} /></label>
-        <label>{t.feedbackAcceptanceConclusion}<textarea value={caseForm.feedback_acceptance_conclusion} onChange={e => updateCaseForm('feedback_acceptance_conclusion', e.target.value)} /></label>
+        <label className="caseInfoWide">{t.closurePractice}<textarea value={caseForm.closure_practice} onChange={e => updateCaseForm('closure_practice', e.target.value)} /></label>
+        <label className="caseInfoWide">{t.feedbackAcceptanceConclusion}<textarea value={caseForm.feedback_acceptance_conclusion} onChange={e => updateCaseForm('feedback_acceptance_conclusion', e.target.value)} /></label>
       </div>
       <div className="actions"><button onClick={saveCaseInfo}>{t.saveCaseInfo}</button>{caseInfoMessage && <span className="muted">{caseInfoMessage}</span>}</div>
       <div className="actions">
@@ -253,6 +287,8 @@ function CaseDetailPanel({ caseId, knownProblemTypes, onChanged }: { caseId: str
       <h3>{t.timeline}</h3>
       <div className="comment"><input value={comment} onChange={e => setComment(e.target.value)} placeholder={t.addComment} /><button onClick={addComment}>{t.add}</button></div>
       {detail.events.map(e => <div className="event" key={e.id}><b>{label(e.event_type)}</b> {e.from_status && <span>{label(e.from_status)} {'->'} {label(e.to_status)}</span>}<p>{e.comment}</p></div>)}
+      </div>
     </section>
+    </div>
   );
 }
