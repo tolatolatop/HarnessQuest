@@ -1,9 +1,8 @@
 import type { SyntheticEvent } from 'react';
-import { useEffect, useState } from 'react';
-import { ClipboardPlus, RotateCcw, Search, Upload, X } from 'lucide-react';
+import { useCallback, useEffect, useState } from 'react';
+import { ChevronLeft, ChevronRight, ClipboardPlus, RotateCcw, Search, Trash2, Upload, X } from 'lucide-react';
 import { t } from '../../config/i18n';
 import { ApiError, request, requestForm } from '../../core/api/client';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { relativeTime } from '../../core/utils/format';
 import type { Session } from '../../types/domain';
 import { CreateCaseModal } from '../cases/components/CreateCaseModal';
@@ -16,31 +15,36 @@ export function Sessions({ onCaseCreated }: { onCaseCreated?: (caseId: string) =
   const [selected, setSelected] = useState<string | null>(null);
   const [caseSession, setCaseSession] = useState<Session | null>(null);
   const [query, setQuery] = useState('');
+  const [timeField, setTimeField] = useState<'created' | 'last_reply'>('created');
+  const [timeFrom, setTimeFrom] = useState('');
+  const [timeTo, setTimeTo] = useState('');
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [uploadOpen, setUploadOpen] = useState(false);
   const pageSize = 30;
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
-  const load = () => {
+  const load = useCallback(() => {
     const params = new URLSearchParams();
     params.set('page', String(page));
     params.set('page_size', String(pageSize));
     if (query.trim() && query.trim().length > 4) params.set('q', query.trim());
+    const from = dateBoundary(timeFrom);
+    const to = dateBoundary(timeTo, true);
+    const prefix = timeField === 'created' ? 'created' : 'last_reply';
+    if (from) params.set(`${prefix}_from`, from);
+    if (to) params.set(`${prefix}_to`, to);
     const suffix = params.toString();
     return request<PaginatedResponse<Session>>(`/sessions${suffix ? `?${suffix}` : ''}`).then(data => { setSessions(data.items); setTotal(data.total); });
-  };
+  }, [page, query, timeField, timeFrom, timeTo]);
   useEffect(() => {
     void load();
-  }, []);
-  useEffect(() => {
-    void load();
-  }, [query]);
-  useEffect(() => {
-    void load();
-  }, [page]);
+  }, [load]);
   useEffect(() => {
     setPage(1);
-  }, [query]);
+  }, [query, timeField, timeFrom, timeTo]);
+  useEffect(() => {
+    setPage(current => Math.min(current, pageCount));
+  }, [pageCount]);
 
   async function uploaded(sessionId: string) {
     await load();
@@ -51,6 +55,24 @@ export function Sessions({ onCaseCreated }: { onCaseCreated?: (caseId: string) =
     setCaseSession(null);
     await load();
     onCaseCreated?.(caseId);
+  }
+  async function deleteSession(session: Session) {
+    const promptId = session.external_session_id ?? session.id;
+    if (!window.confirm(t.deleteSessionConfirm.replace('{id}', promptId))) return;
+    try {
+      await request<{ status: string }>(`/sessions/${encodeURIComponent(session.id)}`, { method: 'DELETE' });
+      if (selected === session.id) setSelected(null);
+      if (sessions.length === 1 && page > 1) setPage(current => current - 1);
+      else await load();
+    } catch {
+      window.alert(t.deleteSessionFailed);
+    }
+  }
+  function resetFilters() {
+    setQuery('');
+    setTimeField('created');
+    setTimeFrom('');
+    setTimeTo('');
   }
   return (
     <section className="panel">
@@ -63,10 +85,15 @@ export function Sessions({ onCaseCreated }: { onCaseCreated?: (caseId: string) =
         <div className="issueSearch">
           <Search size={18} />
           <input value={query} onChange={e => setQuery(e.target.value)} placeholder={t.sessionSearchPlaceholder} />
-          {query && <button className="iconButton" aria-label={t.reset} onClick={() => setQuery('')}><RotateCcw size={16} /></button>}
+          {(query || timeFrom || timeTo) && <button className="iconButton" aria-label={t.reset} onClick={resetFilters}><RotateCcw size={16} /></button>}
+        </div>
+        <div className="sessionTimeFilters">
+          <label>{t.timeField}<select value={timeField} onChange={e => setTimeField(e.target.value as 'created' | 'last_reply')}><option value="created">{t.sessionCreatedAt}</option><option value="last_reply">{t.lastReplyAt}</option></select></label>
+          <label>{t.createdFrom}<input type="date" value={timeFrom} onChange={e => setTimeFrom(e.target.value)} /></label>
+          <label>{t.createdTo}<input type="date" value={timeTo} onChange={e => setTimeTo(e.target.value)} /></label>
         </div>
       </div>
-      <table className="sessionTable"><thead><tr><th>{t.agent}</th><th>{t.repository}</th><th>{t.branch}</th><th>{t.summary}</th><th>{t.createdAt}</th><th>{'会话 ID'}</th><th>{t.langfuse}</th><th>{t.actions}</th></tr></thead><tbody>{sessions.map(s => <tr key={s.id} onClick={() => setSelected(s.id)} className={selected === s.id ? 'selected' : ''}><td><span className="agentMark">{s.agent_type}</span></td><td>{s.repository ?? '-'}</td><td>{s.branch ?? '-'}</td><td>{s.summary ?? '-'}</td><td><span className="relativeTime">{relativeTime(s.created_at)}</span></td><td><code>{s.id ? s.id.slice(0, 8) + '-' : '-'}</code></td><td>{s.langfuse_url ? <a href={s.langfuse_url} target="_blank" onClick={e => e.stopPropagation()}>{t.open}</a> : '-'}</td><td><button className="secondaryButton" onClick={e => { e.stopPropagation(); setCaseSession(s); }}><ClipboardPlus size={16} /> {t.createCase}</button></td></tr>)}</tbody></table>
+      <table className="sessionTable"><thead><tr><th>{t.agent}</th><th>{t.repository}</th><th>{t.branch}</th><th>{t.summary}</th><th>{t.sessionCreatedAt}</th><th>{t.lastReplyAt}</th><th>{'会话 ID'}</th><th>{t.langfuse}</th><th>{t.actions}</th></tr></thead><tbody>{sessions.map(s => <tr key={s.id} onClick={() => setSelected(s.id)} className={selected === s.id ? 'selected' : ''}><td><span className="agentMark">{s.agent_type}</span></td><td>{s.repository ?? '-'}</td><td>{s.branch ?? '-'}</td><td>{s.summary ?? '-'}</td><td><span className="relativeTime" title={s.started_at ?? s.created_at}>{relativeTime(s.started_at ?? s.created_at)}</span></td><td><span className="relativeTime" title={s.ended_at ?? ''}>{s.ended_at ? relativeTime(s.ended_at) : '-'}</span></td><td><code title={s.external_session_id ?? s.id}>{s.id ? s.id.slice(0, 8) + '-' : '-'}</code></td><td>{s.langfuse_url ? <a href={s.langfuse_url} target="_blank" onClick={e => e.stopPropagation()}>{t.open}</a> : '-'}</td><td><div className="sessionActions"><button className="secondaryButton" onClick={e => { e.stopPropagation(); setCaseSession(s); }}><ClipboardPlus size={16} /> {t.createCase}</button><button className="iconButton dangerButton" aria-label={t.deleteSession} title={t.deleteSession} onClick={e => { e.stopPropagation(); void deleteSession(s); }}><Trash2 size={16} /></button></div></td></tr>)}</tbody></table>
       {sessions.length === 0 && <p className="muted sessionEmptyState">{t.noMatchingSessions}</p>}
       {uploadOpen && <UploadSessionModal onClose={() => setUploadOpen(false)} onUploaded={uploaded} />}
       {caseSession && <CreateCaseModal initialSession={caseSession} knownProblemTypes={[]} onClose={() => setCaseSession(null)} onCreated={caseCreated} />}
@@ -80,6 +107,12 @@ export function Sessions({ onCaseCreated }: { onCaseCreated?: (caseId: string) =
       </div>
     </section>
   );
+}
+
+function dateBoundary(value: string, endOfDay = false): string | null {
+  if (!value) return null;
+  const date = new Date(`${value}T${endOfDay ? '23:59:59.999' : '00:00:00.000'}`);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
 }
 
 function UploadSessionModal({ onClose, onUploaded }: { onClose: () => void; onUploaded: (sessionId: string) => Promise<void> }) {

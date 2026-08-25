@@ -464,7 +464,37 @@ tbody tr.selected {
 .sessionTable th:last-child,
 .sessionTable td:last-child {
   text-align: right;
-  width: 130px;
+  width: 190px;
+}
+
+.sessionActions {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.dangerButton {
+  color: #a43d35;
+}
+
+.sessionTimeFilters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.sessionTimeFilters label {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+}
+
+.sessionTimeFilters input,
+.sessionTimeFilters select {
+  min-height: 36px;
+  width: auto;
 }
 
 .secondaryButton {

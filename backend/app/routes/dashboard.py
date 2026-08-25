@@ -14,7 +14,9 @@ router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 
 @router.get("/summary")
 def summary(_: User = Depends(get_current_user), db: Session = Depends(get_db)) -> dict:
-    total_sessions = db.scalar(select(func.count()).select_from(AgentSession)) or 0
+    total_sessions = (
+        db.scalar(select(func.count()).select_from(AgentSession).where(AgentSession.deleted_at.is_(None))) or 0
+    )
     total_cases = db.scalar(select(func.count()).select_from(AgentCase)) or 0
     open_cases_query = select(func.count()).select_from(AgentCase).where(AgentCase.status != CaseStatus.closed)
     open_cases = db.scalar(open_cases_query) or 0
@@ -59,9 +61,16 @@ def case_breakdown(_: User = Depends(get_current_user), db: Session = Depends(ge
         rows = db.execute(select(column, func.count()).select_from(AgentCase).group_by(column)).all()
         return [{"key": str(key.value if hasattr(key, "value") else key), "count": count} for key, count in rows]
 
-    agent_rows = db.execute(select(AgentSession.agent_type, func.count()).group_by(AgentSession.agent_type)).all()
+    agent_rows = db.execute(
+        select(AgentSession.agent_type, func.count())
+        .where(AgentSession.deleted_at.is_(None))
+        .group_by(AgentSession.agent_type)
+    ).all()
     repo_rows = db.execute(
-        select(AgentSession.repository, func.count()).where(AgentSession.repository.is_not(None)).group_by(AgentSession.repository).limit(8)
+        select(AgentSession.repository, func.count())
+        .where(AgentSession.repository.is_not(None), AgentSession.deleted_at.is_(None))
+        .group_by(AgentSession.repository)
+        .limit(8)
     ).all()
     owner_rows = db.execute(
         select(AgentCase.responsible_owner, func.count())
@@ -95,7 +104,7 @@ def trends(days: int = 14, _: User = Depends(get_current_user), db: Session = De
     ).all()
     session_rows = db.execute(
         select(func.date(AgentSession.created_at), func.count())
-        .where(AgentSession.created_at >= since)
+        .where(AgentSession.created_at >= since, AgentSession.deleted_at.is_(None))
         .group_by(func.date(AgentSession.created_at))
     ).all()
     return {

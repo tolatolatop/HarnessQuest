@@ -1,6 +1,7 @@
 from sqlalchemy import inspect, text
 from sqlalchemy.engine import Engine
 
+from app.models import ResponsibleOwner
 
 AGENT_CASE_COLUMNS = {
     "scene_description": "TEXT",
@@ -14,13 +15,14 @@ AGENT_CASE_COLUMNS = {
     "feedback_acceptance_conclusion": "TEXT",
 }
 
+AGENT_SESSION_COLUMNS = {
+    "deleted_at": "TIMESTAMP WITH TIME ZONE",
+}
 
 
 def ensure_responsible_owners_table(engine: Engine) -> None:
     """Create the responsible_owners table if it doesn't exist."""
-    from app.models import ResponsibleOwner
     ResponsibleOwner.__table__.create(engine, checkfirst=True)
-
 
 
 def ensure_responsible_owner_columns(engine: Engine) -> None:
@@ -60,3 +62,15 @@ def ensure_agent_case_columns(engine: Engine) -> None:
                     )
                 )
                 conn.execute(text("ALTER TABLE agent_cases ALTER COLUMN problem_type SET DEFAULT 'other'"))
+
+
+def ensure_agent_session_columns(engine: Engine) -> None:
+    """Add session soft-delete columns to databases created before this feature."""
+    inspector = inspect(engine)
+    columns = inspector.get_columns("agent_sessions")
+    existing = {column["name"] for column in columns}
+    with engine.begin() as conn:
+        for name, column_type in AGENT_SESSION_COLUMNS.items():
+            if name not in existing:
+                # SQLite accepts this PostgreSQL-compatible type declaration as NUMERIC affinity.
+                conn.execute(text(f"ALTER TABLE agent_sessions ADD COLUMN {name} {column_type}"))

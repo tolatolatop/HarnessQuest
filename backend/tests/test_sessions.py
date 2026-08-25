@@ -78,3 +78,51 @@ def test_put_missing_session_returns_not_found(client: TestClient) -> None:
 
     assert response.status_code == HTTP_NOT_FOUND
     assert response.json()["detail"] == "Session not found"
+
+
+def test_delete_by_prompt_id_soft_deletes_and_reupload_cannot_restore(
+    client: TestClient, db: Session
+) -> None:
+    created = client.post(f"{BASE}/import", json=_payload("prompt-delete-1", "to delete"))
+    assert created.status_code == HTTP_OK
+    internal_id = created.json()["id"]
+
+    deleted = client.delete(f"{BASE}/prompt-delete-1")
+    assert deleted.status_code == HTTP_OK
+    assert deleted.json() == {"status": "deleted", "session_id": internal_id}
+
+    session = db.get(AgentSession, internal_id)
+    assert session is not None
+    db.refresh(session)
+    deleted_at = session.deleted_at
+    assert deleted_at is not None
+    assert client.get(BASE).json() == {"items": [], "total": 0}
+    assert client.get(f"{BASE}/{internal_id}").status_code == HTTP_NOT_FOUND
+    assert client.get(f"{BASE}/{internal_id}/raw").status_code == HTTP_NOT_FOUND
+
+    duplicate = client.post(f"{BASE}/import", json=_payload("prompt-delete-1", "new post"))
+    assert duplicate.status_code == HTTP_CONFLICT
+    update = client.put(f"{BASE}/import", json=_payload("prompt-delete-1", "new put"))
+    assert update.status_code == HTTP_NOT_FOUND
+    db.refresh(session)
+    assert session.deleted_at == deleted_at
+    assert session.summary == "to delete"
+
+
+def test_import_parses_creation_and_latest_user_or_assistant_reply_time(client: TestClient) -> None:
+    payload = _payload("timed-session", "with timestamps")
+    payload["metadata"] = {
+        "conversation": [
+            {"role": "user", "timestamp": "2026-08-20T01:00:00Z", "content": "first"},
+            {"role": "tool", "timestamp": "2026-08-20T04:00:00Z", "content": "ignored"},
+            {"role": "assistant", "timestamp": "2026-08-20T02:00:00Z", "content": "reply"},
+            {"role": "user", "timestamp": "2026-08-20T03:00:00Z", "content": "latest"},
+        ]
+    }
+
+    response = client.post(f"{BASE}/import", json=payload)
+
+    assert response.status_code == HTTP_OK
+    # SQLite drops timezone information; the production PostgreSQL column preserves it.
+    assert response.json()["started_at"].startswith("2026-08-20T01:00:00")
+    assert response.json()["ended_at"].startswith("2026-08-20T03:00:00")

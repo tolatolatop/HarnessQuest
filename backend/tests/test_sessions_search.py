@@ -1,8 +1,7 @@
 """Tests for session search features: q parameter."""
 
-from typing import Any
+from datetime import UTC, datetime
 
-import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
@@ -112,3 +111,28 @@ def test_list_sessions_q_matches_branch(
     data = resp.json()
     assert len(data["items"]) == 1
     assert data["items"][0]["branch"] == "feature/user-auth"
+
+
+def test_list_sessions_filters_by_creation_or_last_reply_time(
+    client: TestClient, db: Session
+) -> None:
+    first_id = _seed_session(db, "time-filter-1", "First")
+    second_id = _seed_session(db, "time-filter-2", "Second")
+    first = db.get(AgentSession, first_id)
+    second = db.get(AgentSession, second_id)
+    assert first is not None and second is not None
+    first.started_at = datetime(2026, 8, 1, tzinfo=UTC)
+    first.ended_at = datetime(2026, 8, 2, tzinfo=UTC)
+    second.started_at = datetime(2026, 8, 10, tzinfo=UTC)
+    second.ended_at = datetime(2026, 8, 20, tzinfo=UTC)
+    db.commit()
+
+    by_creation = client.get(f"{BASE}?created_from=2026-08-05T00:00:00Z")
+    assert by_creation.status_code == HTTP_OK
+    assert [item["id"] for item in by_creation.json()["items"]] == [second_id]
+
+    by_reply = client.get(
+        f"{BASE}?last_reply_from=2026-08-15T00:00:00Z&last_reply_to=2026-08-25T00:00:00Z"
+    )
+    assert by_reply.status_code == HTTP_OK
+    assert [item["id"] for item in by_reply.json()["items"]] == [second_id]

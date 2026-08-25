@@ -91,7 +91,7 @@ def create_case(
     data = payload.model_dump()
     if payload.session_id:
         session = db.get(AgentSession, payload.session_id)
-        if not session:
+        if not session or session.deleted_at is not None:
             raise HTTPException(status_code=404, detail="Session not found")
         if not data.get("project_id"):
             data["project_id"] = session.project_id
@@ -113,7 +113,7 @@ def list_experience(
 
 
 @router.get("/{case_id}", response_model=CaseDetail)
-def get_case(case_id: str, _: User = Depends(get_current_user), db: Session = Depends(get_db)) -> AgentCase:
+def get_case(case_id: str, _: User = Depends(get_current_user), db: Session = Depends(get_db)) -> CaseDetail:
     case = db.scalar(
         select(AgentCase)
         .where(AgentCase.id == case_id)
@@ -121,7 +121,10 @@ def get_case(case_id: str, _: User = Depends(get_current_user), db: Session = De
     )
     if not case:
         raise HTTPException(status_code=404, detail="Case not found")
-    return case
+    result = CaseDetail.model_validate(case)
+    if case.session and case.session.deleted_at is not None:
+        result.session = None
+    return result
 
 
 @router.patch("/{case_id}", response_model=CaseRead)

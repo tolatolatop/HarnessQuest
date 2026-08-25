@@ -26,12 +26,16 @@ export type Breakdown = {
 
 export type Session = {
   id: string;
+  external_session_id?: string;
+  langfuse_session_id?: string;
   agent_type: string;
   repository?: string;
   branch?: string;
   summary?: string;
   langfuse_url?: string;
   project_id?: string;
+  started_at?: string;
+  ended_at?: string;
   created_at: string;
 };
 

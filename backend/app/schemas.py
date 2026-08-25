@@ -91,6 +91,8 @@ class SessionRead(ORMModel):
     raw_artifact_uri: str | None
     summary: str | None
     metadata_json: dict[str, Any]
+    started_at: datetime | None
+    ended_at: datetime | None
     created_at: datetime
 
 

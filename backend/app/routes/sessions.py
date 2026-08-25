@@ -1,4 +1,5 @@
 import json
+from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile
@@ -8,31 +9,59 @@ from sqlalchemy.orm import Session
 from app.db import get_db
 from app.dependencies import get_current_user
 from app.models import AgentSession, Project, User
-from app.schemas import SessionImport, SessionRead, PaginatedSessionRead
+from app.schemas import PaginatedSessionRead, SessionImport, SessionRead
 from app.services.claude_jsonl import convert_claude_jsonl_content
 from app.services.langfuse import write_langfuse_trace
 from app.services.opencode_export import convert_opencode_export_content
 from app.services.storage import ObjectStorage
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
+MILLISECONDS_THRESHOLD = 10_000_000_000
+MIN_SEARCH_LENGTH = 5
 
 
 @router.get("", response_model=PaginatedSessionRead)
-def list_sessions(
+def list_sessions(  # noqa: PLR0917
     page: int = Query(1, ge=1),
     page_size: int = Query(30, ge=1, le=200),
     project_id: str | None = None,
     agent_type: str | None = None,
+    created_from: datetime | None = None,
+    created_to: datetime | None = None,
+    last_reply_from: datetime | None = None,
+    last_reply_to: datetime | None = None,
+    started_from: datetime | None = None,
+    started_to: datetime | None = None,
+    ended_from: datetime | None = None,
+    ended_to: datetime | None = None,
     q: str | None = None,
     _: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> PaginatedSessionRead:
-    stmt = select(AgentSession).order_by(AgentSession.created_at.desc())
+    conversation_created_at = func.coalesce(AgentSession.started_at, AgentSession.created_at)
+    last_reply_at = func.coalesce(AgentSession.ended_at, AgentSession.started_at, AgentSession.created_at)
+    stmt = (
+        select(AgentSession)
+        .where(AgentSession.deleted_at.is_(None))
+        .order_by(conversation_created_at.desc())
+    )
     if project_id:
         stmt = stmt.where(AgentSession.project_id == project_id)
     if agent_type:
         stmt = stmt.where(AgentSession.agent_type == agent_type)
-    if q and len(q.strip()) > 4:
+    effective_created_from = created_from or started_from
+    effective_created_to = created_to or started_to
+    effective_reply_from = last_reply_from or ended_from
+    effective_reply_to = last_reply_to or ended_to
+    if effective_created_from:
+        stmt = stmt.where(conversation_created_at >= effective_created_from)
+    if effective_created_to:
+        stmt = stmt.where(conversation_created_at <= effective_created_to)
+    if effective_reply_from:
+        stmt = stmt.where(last_reply_at >= effective_reply_from)
+    if effective_reply_to:
+        stmt = stmt.where(last_reply_at <= effective_reply_to)
+    if q and len(q.strip()) >= MIN_SEARCH_LENGTH:
         keyword = f"%{q.strip()}%"
         stmt = stmt.where(
             or_(
@@ -55,10 +84,7 @@ def list_sessions(
 
 @router.get("/{session_id}", response_model=SessionRead)
 def get_session(session_id: str, _: User = Depends(get_current_user), db: Session = Depends(get_db)) -> AgentSession:
-    session = db.get(AgentSession, session_id)
-    if not session:
-        raise HTTPException(status_code=404, detail="Session not found")
-    return session
+    return _get_visible_session(session_id, db)
 
 
 @router.get("/{session_id}/raw")
@@ -67,15 +93,26 @@ def get_session_raw(
     _: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
-    session = db.get(AgentSession, session_id)
-    if not session:
-        raise HTTPException(status_code=404, detail="Session not found")
+    session = _get_visible_session(session_id, db)
     if not session.raw_artifact_uri:
         raise HTTPException(status_code=404, detail="Session raw artifact not found")
     try:
         return ObjectStorage().get_json(session.raw_artifact_uri)
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"Failed to read session artifact: {exc}") from exc
+
+
+@router.delete("/{prompt_id}")
+def delete_session(
+    prompt_id: str,
+    _: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict[str, str]:
+    """Soft-delete a session addressed by its internal or external prompt/session id."""
+    session = _get_visible_session(prompt_id, db)
+    session.deleted_at = datetime.now(UTC)
+    db.commit()
+    return {"status": "deleted", "session_id": session.id}
 
 
 @router.post("/import", response_model=SessionRead)
@@ -106,6 +143,9 @@ async def _persist_session(
     existing = _find_existing_session(payload, db)
     if existing and not update_existing:
         raise HTTPException(status_code=409, detail={"message": "Session already exists", "session_id": existing.id})
+    if existing and existing.deleted_at is not None:
+        # Upload and update APIs never restore or mutate a soft-deleted session.
+        raise HTTPException(status_code=404, detail="Session not found")
     if update_existing and not existing:
         if not _session_identity(payload):
             raise HTTPException(status_code=400, detail="Session id is required for PUT updates")
@@ -145,8 +185,7 @@ async def _persist_session(
     session.repository = payload.repository
     session.branch = payload.branch
     session.commit_sha = payload.commit_sha
-    session.started_at = payload.started_at
-    session.ended_at = payload.ended_at
+    session.started_at, session.ended_at = _derive_session_times(payload)
     session.source = payload.source
     session.raw_artifact_uri = raw_uri
     session.summary = payload.summary
@@ -174,6 +213,97 @@ def _find_existing_session(payload: SessionImport, db: Session) -> AgentSession 
     field, value = identity
     column = AgentSession.external_session_id if field == "external_session_id" else AgentSession.langfuse_session_id
     return db.scalar(select(AgentSession).where(column == value).order_by(AgentSession.created_at.desc()))
+
+
+def _get_visible_session(prompt_id: str, db: Session) -> AgentSession:
+    session = db.scalar(
+        select(AgentSession)
+        .where(
+            AgentSession.deleted_at.is_(None),
+            or_(
+                AgentSession.id == prompt_id,
+                AgentSession.external_session_id == prompt_id,
+                AgentSession.langfuse_session_id == prompt_id,
+                AgentSession.langfuse_trace_id == prompt_id,
+            ),
+        )
+        .order_by(AgentSession.created_at.desc())
+    )
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    return session
+
+
+def _derive_session_times(payload: SessionImport) -> tuple[datetime | None, datetime | None]:
+    """Derive creation and latest human/AI reply times from supported record shapes."""
+    reply_times: list[datetime] = []
+    for value in (payload.metadata, payload.raw):
+        if not isinstance(value, dict):
+            continue
+        normalized_messages = value.get("conversation") or value.get("messages")
+        if isinstance(normalized_messages, list):
+            _collect_reply_times(normalized_messages, reply_times)
+        else:
+            _collect_reply_times(value, reply_times)
+        if reply_times:
+            break
+    created_at = payload.started_at or (min(reply_times) if reply_times else None)
+    last_reply_at = max(reply_times) if reply_times else payload.ended_at
+    return created_at, last_reply_at
+
+
+def _collect_reply_times(value: Any, result: list[datetime]) -> None:
+    if isinstance(value, list):
+        for item in value:
+            _collect_reply_times(item, result)
+        return
+    if not isinstance(value, dict):
+        return
+
+    info = value.get("info") if isinstance(value.get("info"), dict) else None
+    role = value.get("role") or value.get("type") or (info or {}).get("role")
+    if role in {"user", "assistant"}:
+        timestamp = _message_datetime(value) or (_message_datetime(info) if info else None)
+        if timestamp:
+            result.append(timestamp)
+    for nested in value.values():
+        if isinstance(nested, (dict, list)):
+            _collect_reply_times(nested, result)
+
+
+def _message_datetime(message: dict[str, Any] | None) -> datetime | None:
+    if not message:
+        return None
+    for key in ("timestamp", "created_at", "createdAt"):
+        parsed = _parse_datetime(message.get(key))
+        if parsed:
+            return parsed
+    time_value = message.get("time")
+    if isinstance(time_value, dict):
+        for key in ("completed", "updated", "created"):
+            parsed = _parse_datetime(time_value.get(key))
+            if parsed:
+                return parsed
+    return _parse_datetime(time_value)
+
+
+def _parse_datetime(value: Any) -> datetime | None:
+    if isinstance(value, datetime):
+        return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
+    if isinstance(value, int | float):
+        seconds = value / 1000 if value > MILLISECONDS_THRESHOLD else value
+        try:
+            return datetime.fromtimestamp(seconds, tz=UTC)
+        except (OSError, OverflowError, ValueError):
+            return None
+    if not isinstance(value, str) or not value.strip():
+        return None
+    normalized = value.strip().replace("Z", "+00:00")
+    try:
+        result = datetime.fromisoformat(normalized)
+        return result.replace(tzinfo=UTC) if result.tzinfo is None else result.astimezone(UTC)
+    except ValueError:
+        return None
 
 
 def _session_identity(payload: SessionImport) -> tuple[str, str] | None:
