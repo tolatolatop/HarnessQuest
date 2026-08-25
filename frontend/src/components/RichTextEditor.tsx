@@ -49,15 +49,15 @@ async function uploadImage(file: File, editor: Editor): Promise<string | null> {
   const formData = new FormData();
   formData.set('file', file);
 
-  const res = await fetch(API_BASE_URL + '/api/v1/uploads/images', {
+  const res = await fetch(`${API_BASE_URL}/api/v1/uploads/images`, {
     method: 'POST',
-    headers: { 'Authorization': 'Bearer ' + token },
+    headers: { Authorization: `Bearer ${token}` },
     body: formData,
   });
 
   if (!res.ok) {
     const text = await res.text().catch(() => '');
-    return '上传失败 (' + res.status + '): ' + (text || '未知错误');
+    return `上传失败 (${res.status}): ${text || '未知错误'}`;
   }
 
   const data = (await res.json()) as { url: string };
@@ -155,8 +155,7 @@ export function RichTextEditor({ value, onChange, placeholder, editable = true }
         const items = event.clipboardData?.items;
         if (!items) return false;
 
-        for (let i = 0; i < items.length; i++) {
-          const item = items[i];
+        for (const item of items) {
           if (item.type.startsWith('image/')) {
             event.preventDefault();
             const file = item.getAsFile();
@@ -168,19 +167,22 @@ export function RichTextEditor({ value, onChange, placeholder, editable = true }
 
             const headers: Record<string, string> = {};
             if (token) {
-              headers['Authorization'] = 'Bearer ' + token;
+              headers.Authorization = `Bearer ${token}`;
             }
 
-            fetch(API_BASE_URL + '/api/v1/uploads/images', {
+            fetch(`${API_BASE_URL}/api/v1/uploads/images`, {
               method: 'POST',
               headers,
               body: formData,
             })
-              .then((r) => (r.ok ? r.json() : Promise.reject()))
-              .then((data: { url: string }) => {
-                editor?.chain().focus().setImage({ src: data.url }).run();
+              .then((response) => {
+                if (!response.ok) throw new Error(`Image upload failed: ${response.status}`);
+                return response.json() as Promise<{ url: string }>;
               })
-              .catch(() => {});
+              .then((data: { url: string }) => {
+                editor.chain().focus().setImage({ src: data.url }).run();
+              })
+              .catch(() => undefined);
 
             return true;
           }
@@ -192,7 +194,6 @@ export function RichTextEditor({ value, onChange, placeholder, editable = true }
 
   // Sync external value changes into the editor (fixes empty content on async load)
   useEffect(() => {
-    if (!editor) return;
     if (editor.isDestroyed) return;
 
     const currentHtml = editor.getHTML();
@@ -207,13 +208,13 @@ export function RichTextEditor({ value, onChange, placeholder, editable = true }
 
   // Update editable state dynamically
   useEffect(() => {
-    if (!editor || editor.isDestroyed) return;
+    if (editor.isDestroyed) return;
     editor.setEditable(editable);
   }, [editor, editable]);
 
   return (
     <div className={'rteContainer' + (editable ? '' : ' rteReadonly')}>
-      {editable && editor && <Toolbar editor={editor} />}
+      {editable && <Toolbar editor={editor} />}
       <EditorContent editor={editor} className="rteContent" />
     </div>
   );

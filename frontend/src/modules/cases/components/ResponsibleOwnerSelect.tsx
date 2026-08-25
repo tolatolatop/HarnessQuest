@@ -20,12 +20,16 @@ export function ResponsibleOwnerSelect({ value, onChange }: ResponsibleOwnerSele
   const [newName, setNewName] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const load = useCallback(() => {
-    request<ResponsibleOwnerDto[]>('/responsible-owners').then(setOwners).catch(() => {});
+  const load = useCallback(async (): Promise<void> => {
+    try {
+      setOwners(await request<ResponsibleOwnerDto[]>('/responsible-owners'));
+    } catch {
+      // Keep the current options when reloading fails.
+    }
   }, []);
 
   useEffect(() => {
-    load();
+    void load();
   }, [load]);
 
   useEffect(() => {

@@ -14,12 +14,16 @@ export function Settings() {
   const [editArea, setEditArea] = useState('');
   const [message, setMessage] = useState('');
 
-  const load = useCallback(() => {
-    request<OwnerDto[]>('/responsible-owners').then(setOwners).catch(() => {});
+  const load = useCallback(async (): Promise<void> => {
+    try {
+      setOwners(await request<OwnerDto[]>('/responsible-owners'));
+    } catch {
+      setMessage('责任人列表加载失败');
+    }
   }, []);
 
   useEffect(() => {
-    load();
+    void load();
   }, [load]);
 
   async function addOwner() {
