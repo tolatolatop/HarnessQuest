@@ -37,10 +37,12 @@ export function CreateCaseModal({ knownProblemTypes, initialSession, onClose, on
   async function submit(e: SyntheticEvent<HTMLFormElement>) {
     e.preventDefault();
     setError('');
-    if (!usesExistingSession && !file) {
-      setError(t.sessionRecordRequired);
+    const normalizedTitle = title.trim();
+    if (!normalizedTitle && !initialSession) {
+      setError(t.caseTitleRequired);
       return;
     }
+    const caseTitle = normalizedTitle || (initialSession ? sessionTitleFallback(initialSession, file) : '');
     setSubmitting(true);
     try {
       let session = initialSession;
@@ -49,18 +51,13 @@ export function CreateCaseModal({ knownProblemTypes, initialSession, onClose, on
         formData.set('file', file);
         session = await requestForm<Session>('/sessions/upload/auto', formData);
       }
-      if (!session) {
-        setError(t.sessionRecordRequired);
-        return;
-      }
-      const normalizedTitle = title.trim();
       const normalizedProblemType = problemType === CUSTOM_PROBLEM_TYPE ? customProblemType.trim() : problemType;
       const created = await request<Case>('/cases', {
         method: 'POST',
         body: JSON.stringify({
-          title: normalizedTitle.length > 0 ? normalizedTitle : sessionTitleFallback(session, file),
-          session_id: session.id,
-          source: 'offline_log_import',
+          title: caseTitle,
+          session_id: session?.id ?? null,
+          source: session ? 'offline_log_import' : 'manual',
           severity,
           problem_type: normalizedProblemType || 'other',
           scene_description: sceneDescription || null,
@@ -85,13 +82,14 @@ export function CreateCaseModal({ knownProblemTypes, initialSession, onClose, on
       <form className="caseCreateModal" onSubmit={submit} onMouseDown={e => e.stopPropagation()}>
         <header className="modalHeader">
           <div className="modalHeaderMain">
-            <div className="modalTitleRow"><span>{t.createCaseTitle}</span><strong>{usesExistingSession ? t.useSelectedSession : t.autoDetectSession}</strong></div>
+            <div className="modalTitleRow"><span>{t.createCaseTitle}</span><strong>{usesExistingSession ? t.useSelectedSession : t.sessionOptional}</strong></div>
             {initialSession && <p>{t.selectedSessionEvidence}: {sessionTitleFallback(initialSession)}</p>}
+            {!initialSession && <p>{t.caseSessionOptionalHelp}</p>}
           </div>
           <button className="iconButton" type="button" aria-label={t.closeModal} onClick={onClose}><X size={18} /></button>
         </header>
         <div className="caseCreateBody">
-          <label>{t.title}<input value={title} onChange={e => setTitle(e.target.value)} placeholder={t.caseTitlePlaceholder} /></label>
+          <label>{t.title}<input value={title} onChange={e => setTitle(e.target.value)} placeholder={t.caseTitlePlaceholder} required={!usesExistingSession} /></label>
           <label>{t.sceneDescription}<RichTextEditor value={sceneDescription} onChange={setSceneDescription} placeholder={t.sceneDescription} /></label>
           <label>{t.expectedResult}<textarea value={expectedResult} onChange={e => setExpectedResult(e.target.value)} /></label>
           <label>{t.actualResult}<textarea value={actualResult} onChange={e => setActualResult(e.target.value)} /></label>
@@ -102,12 +100,12 @@ export function CreateCaseModal({ knownProblemTypes, initialSession, onClose, on
           <label>{t.feedbackReporter}<input value={feedbackReporter} onChange={e => setFeedbackReporter(e.target.value)} /></label>
           <label>{t.responsibleOwner}<ResponsibleOwnerSelect value={responsibleOwner} onChange={setResponsibleOwner} /></label>
           <label>{t.tags}<input value={tags} onChange={e => setTags(e.target.value)} placeholder={t.tagsPlaceholder} /></label>
-          {!usesExistingSession && <label>{t.sessionRecordFile}<input type="file" accept=".json,.jsonl,application/json,application/jsonl,text/plain" required onChange={e => setFile(e.target.files?.[0] ?? null)} /></label>}
+          {!usesExistingSession && <label>{t.sessionRecordFile}（{t.optional}）<input type="file" accept=".json,.jsonl,application/json,application/jsonl,text/plain" onChange={e => setFile(e.target.files?.[0] ?? null)} /></label>}
           {error && <div className="error">{error}</div>}
         </div>
         <footer className="modalFooter">
           <button type="button" onClick={onClose}>{t.close}</button>
-          <button disabled={submitting}>{submitting ? t.loading : (usesExistingSession ? t.createCase : t.uploadAndCreate)}</button>
+          <button disabled={submitting}>{submitting ? t.loading : (file ? t.uploadAndCreate : t.createCase)}</button>
         </footer>
       </form>
     </div>

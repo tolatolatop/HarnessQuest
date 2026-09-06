@@ -17,6 +17,9 @@ AGENT_CASE_COLUMNS = {
 
 AGENT_SESSION_COLUMNS = {
     "deleted_at": "TIMESTAMP WITH TIME ZONE",
+    "first_user_input": "TEXT",
+    "latest_user_input": "TEXT",
+    "search_inputs_version": "INTEGER",
 }
 
 
@@ -65,7 +68,7 @@ def ensure_agent_case_columns(engine: Engine) -> None:
 
 
 def ensure_agent_session_columns(engine: Engine) -> None:
-    """Add session soft-delete columns to databases created before this feature."""
+    """Add session soft-delete and search columns to existing databases."""
     inspector = inspect(engine)
     columns = inspector.get_columns("agent_sessions")
     existing = {column["name"] for column in columns}

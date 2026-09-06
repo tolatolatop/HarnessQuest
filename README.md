@@ -109,4 +109,4 @@ If the analyzer is not configured, the workflow still works and analysis returns
 - Offline agent records may be incomplete by design.
 - Langfuse integration is optional-write: HarnessQuest stores links and tries to write a basic trace only when keys are configured.
 - OAuth/OIDC login is available. See `docs/oauth-third-party-user-management.md` for GitHub and generic provider examples.
-- Database migrations are intentionally deferred for the first runnable MVP; the API creates tables on startup.
+- The API creates tables and applies additive schema migrations on startup. Session search also backfills historical user-input endpoints and creates its PostgreSQL index; see [session search](docs/session-search.md) for rollout and performance details.

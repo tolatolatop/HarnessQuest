@@ -1,3 +1,4 @@
+import json
 from typing import Any
 
 import pytest
@@ -5,7 +6,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import AgentSession
+from app.models import AgentSession, User
 from app.routes import sessions as session_routes
 from app.schemas import SessionImport
 
@@ -40,6 +41,98 @@ def _payload(session_id: str, summary: str) -> dict[str, Any]:
         "summary": summary,
         "raw": {"external_session_id": session_id, "summary": summary},
     }
+
+
+def test_search_user_endpoints_update_clear_and_delete(client: TestClient) -> None:
+    payload = _payload("endpoint-session", "summary-marker")
+    payload["metadata"] = {"conversation": [
+        {"role": "user", "content": "initial-marker 处理用户最初的请求 literal%_\\value"},
+        {"role": "user", "content": "middle-marker"},
+        {"role": "user", "content": "latest-marker"},
+        {"role": "assistant", "content": "assistant-marker"},
+    ]}
+    assert client.post(f"{BASE}/import", json=payload).status_code == HTTP_OK
+    for keyword in ("initial-marker", "LATEST-MARKER", "summary-marker", "用户最初的请求", "literal%_\\value"):
+        result = client.get(BASE, params={"q": keyword}).json()
+        assert result["total"] == 1, keyword
+    for keyword in ("middle-marker", "assistant-marker", "initial marker", "literalXY\\value", "%%%%%", "_____"):
+        assert client.get(BASE, params={"q": keyword}).json()["total"] == 0, keyword
+
+    payload["metadata"]["conversation"].append({"role": "user", "content": "replacement-marker"})
+    assert client.put(f"{BASE}/import", json=payload).status_code == HTTP_OK
+    assert client.get(BASE, params={"q": "latest-marker"}).json()["total"] == 0
+    assert client.get(BASE, params={"q": "replacement-marker"}).json()["total"] == 1
+
+    payload["metadata"] = {}
+    assert client.put(f"{BASE}/import", json=payload).status_code == HTTP_OK
+    assert client.get(BASE, params={"q": "initial-marker"}).json()["total"] == 0
+    assert client.delete(f"{BASE}/endpoint-session").status_code == HTTP_OK
+    assert client.get(BASE, params={"q": "summary-marker"}).json()["total"] == 0
+
+
+def test_search_import_raw_and_single_input(client: TestClient) -> None:
+    raw_payload = _payload("raw-search-session", "unrelated summary")
+    raw_payload["raw"] = {"messages": [
+        {"role": "user", "content": "raw-first-marker"},
+        {"role": "user", "content": "raw-latest-marker"},
+    ]}
+    assert client.post(f"{BASE}/import", json=raw_payload).status_code == HTTP_OK
+    for keyword in ("raw-first-marker", "raw-latest-marker"):
+        assert client.get(BASE, params={"q": keyword}).json()["total"] == 1
+    single = _payload("single-search-session", "unrelated summary")
+    single["user_input"] = "single-input-marker"
+    assert client.post(f"{BASE}/import", json=single).status_code == HTTP_OK
+    assert client.get(BASE, params={"q": "single-input-marker"}).json()["total"] == 1
+
+
+@pytest.mark.parametrize("format_name", ["claude", "opencode"])
+def test_search_auto_upload_preserves_complete_user_turns(client: TestClient, db: Session, format_name: str) -> None:
+    # The shared client fixture recreates tables after its token fixture runs.
+    # Upload converters need an actual current user, so restore that test row.
+    db.expunge_all()
+    db.add(User(id="test-admin-id", email="test-upload@example.com", display_name="Upload tester"))
+    db.commit()
+    first_parts = [{"type": "text", "text": "first-block-marker"},
+                   {"type": "text", "text": "second-block-marker"}]
+    last_parts = [{"type": "text", "text": "latest-block-marker"},
+                  {"type": "text", "text": "x" * 20_000 + " untruncated-tail-marker"}]
+    if format_name == "claude":
+        content = "\n".join(json.dumps(row) for row in [
+            {"type": "user", "sessionId": "claude-search", "message": {"role": "user", "content": first_parts}},
+            {"type": "user", "sessionId": "claude-search", "message": {"role": "user", "content": last_parts}},
+            {"type": "user", "sessionId": "claude-search", "message": {"role": "user", "content": [
+                {"type": "tool_result", "content": "excluded-tool-marker"},
+            ]}},
+        ])
+    else:
+        content = json.dumps({"session": {"id": "opencode-search"}, "messages": [
+            {"info": {"role": "user"}, "parts": first_parts},
+            {"info": {"role": "user"}, "parts": last_parts},
+        ]})
+    result = client.post(f"{BASE}/upload/auto", files={"file": ("session.json", content, "application/json")})
+    assert result.status_code == HTTP_OK, result.text
+    for keyword in ("first-block-marker\nsecond-block-marker", "latest-block-marker", "untruncated-tail-marker"):
+        assert client.get(BASE, params={"q": keyword}).json()["total"] == 1, (keyword, result.json())
+    assert client.get(BASE, params={"q": "excluded-tool-marker"}).json()["total"] == 0
+
+
+def test_search_combines_filters_and_pagination(client: TestClient) -> None:
+    for number in range(3):
+        payload = _payload(f"paged-search-{number}", "summary")
+        payload["user_input"] = "shared-input-marker"
+        payload["project_name"] = "project-a" if number < 2 else "project-b"
+        payload["started_at"] = f"2026-08-{number + 1:02}T00:00:00Z"
+        result = client.post(f"{BASE}/import", json=payload)
+        assert result.status_code == HTTP_OK
+        if number == 0:
+            project_id = result.json()["project_id"]
+    params = {"q": "shared-input-marker", "project_id": project_id, "page_size": 1}
+    first = client.get(BASE, params=params).json()
+    second = client.get(BASE, params={**params, "page": 2}).json()
+    assert first["total"] == second["total"] == 2
+    assert first["items"][0]["id"] != second["items"][0]["id"]
+    filtered = client.get(BASE, params={**params, "created_from": "2026-08-02T00:00:00Z"}).json()
+    assert filtered["total"] == 1
 
 
 def test_post_duplicate_session_id_returns_conflict(client: TestClient, db: Session) -> None:

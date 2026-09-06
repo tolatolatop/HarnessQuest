@@ -13,6 +13,7 @@ from app.schemas import PaginatedSessionRead, SessionImport, SessionRead
 from app.services.claude_jsonl import convert_claude_jsonl_content
 from app.services.langfuse import write_langfuse_trace
 from app.services.opencode_export import convert_opencode_export_content
+from app.services.session_search import search_predicate, set_search_inputs
 from app.services.storage import ObjectStorage
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
@@ -21,7 +22,7 @@ MIN_SEARCH_LENGTH = 5
 
 
 @router.get("", response_model=PaginatedSessionRead)
-def list_sessions(  # noqa: PLR0917
+def list_sessions(
     page: int = Query(1, ge=1),
     page_size: int = Query(30, ge=1, le=200),
     project_id: str | None = None,
@@ -43,7 +44,7 @@ def list_sessions(  # noqa: PLR0917
     stmt = (
         select(AgentSession)
         .where(AgentSession.deleted_at.is_(None))
-        .order_by(conversation_created_at.desc())
+        .order_by(conversation_created_at.desc(), AgentSession.id.desc())
     )
     if project_id:
         stmt = stmt.where(AgentSession.project_id == project_id)
@@ -62,20 +63,10 @@ def list_sessions(  # noqa: PLR0917
     if effective_reply_to:
         stmt = stmt.where(last_reply_at <= effective_reply_to)
     if q and len(q.strip()) >= MIN_SEARCH_LENGTH:
-        keyword = f"%{q.strip()}%"
         stmt = stmt.where(
-            or_(
-                AgentSession.id.ilike(keyword),
-                AgentSession.external_session_id.ilike(keyword),
-                AgentSession.langfuse_session_id.ilike(keyword),
-                AgentSession.langfuse_trace_id.ilike(keyword),
-                AgentSession.agent_type.ilike(keyword),
-                AgentSession.repository.ilike(keyword),
-                AgentSession.branch.ilike(keyword),
-                AgentSession.summary.ilike(keyword),
-            )
+            search_predicate(q.strip(), postgresql=db.get_bind().dialect.name == "postgresql")
         )
-    count_stmt = select(func.count()).select_from(stmt.subquery())
+    count_stmt = select(func.count()).select_from(stmt.order_by(None).with_only_columns(AgentSession.id).subquery())
     total = db.scalar(count_stmt) or 0
     stmt = stmt.offset((page - 1) * page_size).limit(page_size)
     items = list(db.scalars(stmt))
@@ -199,6 +190,7 @@ async def _persist_session(
         "errors": payload.errors,
         "git_diff": payload.git_diff,
     }
+    set_search_inputs(session, session.metadata_json, raw_payload)
     if not existing:
         db.add(session)
     db.commit()
@@ -267,7 +259,7 @@ def _collect_reply_times(value: Any, result: list[datetime]) -> None:
         if timestamp:
             result.append(timestamp)
     for nested in value.values():
-        if isinstance(nested, (dict, list)):
+        if isinstance(nested, dict | list):
             _collect_reply_times(nested, result)
 
 

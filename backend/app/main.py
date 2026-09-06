@@ -14,6 +14,7 @@ from app.migrations import (
 )
 from app.routes import auth, cases, dashboard, projects, responsible_owners, sessions, uploads
 from app.services.bootstrap import bootstrap_admin
+from app.services.session_search import backfill_search_inputs, ensure_search_index
 
 
 @asynccontextmanager
@@ -21,6 +22,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     Base.metadata.create_all(bind=engine)
     ensure_agent_case_columns(engine)
     ensure_agent_session_columns(engine)
+    backfill_search_inputs(engine)
+    ensure_search_index(engine)
     ensure_responsible_owners_table(engine)
     ensure_responsible_owner_columns(engine)
     db = SessionLocal()

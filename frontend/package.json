@@ -16,6 +16,8 @@
     "@tiptap/react": "^3.27.1",
     "@tiptap/starter-kit": "^3.27.1",
     "@vitejs/plugin-react": "latest",
+    "antd": "^6.6.1",
+    "dayjs": "^1.11.23",
     "lucide-react": "latest",
     "react": "latest",
     "react-dom": "latest",

@@ -247,8 +247,8 @@ function CaseDetailModal({ caseId, knownProblemTypes, onChanged, onClose }: { ca
       <div className="caseDetailBody">
       <h2 id="case-detail-title">{detail.title}</h2>
       <div className="chips"><Badge value={detail.status} type="status" /><Badge value={detail.severity} type="severity" /><Badge value={detail.problem_type} /></div>
-      {detail.session?.langfuse_url && <a href={detail.session.langfuse_url} target="_blank">{t.openLangfuseTrace}</a>}
-      {detail.session_id && <button onClick={() => setChatSessionId(detail.session_id ?? null)}>{t.showRawSession}</button>}
+      <h3>{t.sessionDetail}</h3>
+      {detail.session ? <div className="sessionEvidenceBar"><span>{detail.session.summary ?? detail.session.external_session_id ?? detail.session.id}</span>{detail.session.langfuse_url && <a href={detail.session.langfuse_url} target="_blank">{t.openLangfuseTrace}</a>}<button onClick={() => setChatSessionId(detail.session?.id ?? null)}>{t.showRawSession}</button></div> : <p className="muted sessionMissingState">{t.sessionContentMissing}</p>}
       {chatSessionId && <SessionChatModal sessionId={chatSessionId} onClose={() => setChatSessionId(null)} />}
       <h3>{t.sceneDescription}</h3>
       <div className="caseInfoGrid">

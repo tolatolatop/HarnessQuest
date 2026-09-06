@@ -6,7 +6,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
-from app.models import AgentCase, AgentSession
+from app.models import AgentCase, AgentSession, User, UserRole
 
 BASE = "/api/v1/cases"
 HTTP_OK = 200
@@ -110,3 +110,29 @@ def test_list_cases_session_id_combined_with_status(
     resp = client.get(f"{BASE}?session_id={session_id}&status=closed")
     assert resp.status_code == HTTP_OK
     assert resp.json()["items"] == []
+
+
+def test_create_case_without_session(client: TestClient, db: Session) -> None:
+    db.add(
+        User(
+            id="test-admin-id",
+            email="admin@test.local",
+            display_name="Test Admin",
+            role=UserRole.admin,
+            is_active=True,
+        )
+    )
+    db.commit()
+    response = client.post(
+        BASE,
+        json={
+            "title": "Manual case without session evidence",
+            "source": "manual",
+            "severity": "medium",
+            "problem_type": "other",
+        },
+    )
+
+    assert response.status_code == HTTP_OK
+    assert response.json()["session_id"] is None
+    assert response.json()["source"] == "manual"
