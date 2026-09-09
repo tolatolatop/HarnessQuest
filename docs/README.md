@@ -6,3 +6,4 @@ This directory captures the research, product boundaries, and first-stage design
 
 - [AI Agent Issue Loop Research and MVP Design](./ai-agent-issue-loop-research-and-mvp.md)
 
+- [前端会话展示规则](./frontend-chat-recognition.md)
