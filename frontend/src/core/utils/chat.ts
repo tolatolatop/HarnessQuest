@@ -142,6 +142,13 @@ export function isCollapsedByDefault(kind: ChatBlockKind): boolean {
   return ['tool', 'function', 'mcp', 'skill', 'shell', 'file', 'diff', 'metadata', 'observation'].includes(kind);
 }
 
+export function extractSessionChatBlocks(metadata: JsonObject | undefined, raw: JsonValue | null): ChatBlock[] {
+  const blocks = extractConversationBlocks(metadata ?? null);
+  if (blocks.length) return blocks;
+  const rawBlocks = extractChatBlocks(raw);
+  return rawBlocks.length ? rawBlocks : extractChatBlocks(metadata ?? null);
+}
+
 export function matchesBlockQuery(block: ChatBlock, query: string): boolean {
   const normalizedQuery = query.trim().toLowerCase();
   if (!normalizedQuery) return true;

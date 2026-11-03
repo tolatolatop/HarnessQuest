@@ -32,6 +32,7 @@ export type Session = {
   repository?: string;
   branch?: string;
   summary?: string;
+  metadata_json?: JsonObject;
   langfuse_url?: string;
   project_id?: string;
   started_at?: string;

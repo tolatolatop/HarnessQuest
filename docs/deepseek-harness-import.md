@@ -53,13 +53,19 @@ Python SDK 可调用 `HarnessQuestClient.upload_deepseek_jsonl(path)` 或已有�
 
 Shell 结果保留 dsh 的终止标记语义：非 0 退出码取 `[exit code: N]`；`[timed out after ...]` 记为 124 / `timed_out`，`[killed by signal: SIGTERM]` 记为 128+信号值 / `killed`；被挂起到后台任务的调用（`[still running ...; moved to background job bash-9]`）记为 `exit_code: null`、`status: "running"` 并附 `background_job`。因此 `exit_code` 可能为 `null`，消费方需要同时看 `status`。
 
+仅将输出末尾连续、完整的状态标记行用于状态识别；正文中的同类文字不会触发状态切换。超时或人工停止标记可以与退出码/信号标记共存，此时保留 `timed_out` 或 `stopped` 原因。若 stdout 最后几行与真正标记完全相同，文本日志本身无法区分两者。
+
 ## 存储与资源
 
 完整原始日志（`{"format", "header", "rows"}`）写入会话的 raw artifact（对象存储，`raw_artifact_uri`），`metadata_json` 只保留解析后的视图。这样列表接口不会因为导入大日志而返回整份日志；之前的实现把原始行也放进 `metadata_json`，一次 55 MB 的解压日志会生成约 106 MB 的响应体与约 0.9 GB 的峰值内存。
 
+会话详情优先显示 `metadata_json.conversation`；缺少解析视图的旧记录继续从 raw artifact 提取对话。“显示 JSON”仍展示完整原始 artifact。
+
 导入仍是整文件解析：64 MiB 的解压上限约对应 0.9~1 GB 峰值内存，属于单进程内存压力点。输入与解压后各 64 MiB 的限制对自动识别入口的所有格式生效（Claude Code / opencode / HarnessQuest JSON 同样受限）。
 
 Langfuse trace 只接收裁剪后的元数据：`conversation`、`messages`、`raw_rows`、`tool_calls`、`shell_commands`、`file_edits` 以及 `langfuse_shape.observations` 不再发送，替换为 `counts` 计数与 `trimmed_keys` 说明；完整内容仍保留在 HarnessQuest 的元数据与 raw artifact 中。
+
+`langfuse_shape.trace.input/output` 同样从发送的 metadata 中移除，避免重复传输大段输入输出；Langfuse 请求顶层的 input/output 保留完整内容。裁剪针对上述已知字段，自定义 metadata 仍按原值保留，未设置总字节数上限。
 
 该导入器提供审计时间线，不执行 dsh 的消息 surface 替换、压缩后重放或运行恢复。
 

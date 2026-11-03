@@ -1,6 +1,8 @@
 import asyncio
 import json
 
+import pytest
+
 from app.schemas import SessionImport
 from app.services import langfuse
 
@@ -67,7 +69,7 @@ def test_trace_metadata_drops_bulk_sections() -> None:
     ]
 
 
-def test_trace_metadata_keeps_small_metadata_intact(monkeypatch) -> None:
+def test_trace_metadata_keeps_small_metadata_intact() -> None:
     payload = SessionImport.model_validate(
         {
             "external_session_id": "session-2",
@@ -85,6 +87,28 @@ def test_trace_metadata_keeps_small_metadata_intact(monkeypatch) -> None:
     assert metadata["claude"]["version"] == "2.0.1"
     assert "trimmed_keys" not in metadata
     assert metadata["counts"]["conversation"] == 0
+
+
+@pytest.mark.parametrize("with_observations", [False, True])
+def test_trace_metadata_drops_duplicate_large_input_output_without_mutating_payload(with_observations: bool) -> None:
+    payload = _payload()
+    payload.user_input = "input text " * 100_000
+    payload.assistant_output = "answer text " * 100_000
+    shape = payload.metadata["langfuse_shape"]
+    shape["trace"].update({"input": {"prompt": payload.user_input}, "output": {"answer": payload.assistant_output}})
+    if not with_observations:
+        shape.pop("observations")
+    original = payload.model_dump(mode="json")
+
+    metadata = langfuse.trace_metadata(payload)
+
+    assert "input" not in metadata["langfuse_shape"]["trace"]
+    assert "output" not in metadata["langfuse_shape"]["trace"]
+    assert metadata["langfuse_shape"]["trace"]["id"] == payload.langfuse_trace_id
+    assert "langfuse_shape.trace.input" in metadata["trimmed_keys"]
+    assert "langfuse_shape.trace.output" in metadata["trimmed_keys"]
+    assert len(json.dumps(metadata).encode()) < MAX_TRACE_BODY_BYTES
+    assert payload.model_dump(mode="json") == original
 
 
 def test_write_langfuse_trace_sends_trimmed_metadata(monkeypatch) -> None:
@@ -118,7 +142,14 @@ def test_write_langfuse_trace_sends_trimmed_metadata(monkeypatch) -> None:
     monkeypatch.setattr(langfuse, "get_settings", lambda: _Settings())
     monkeypatch.setattr(langfuse.httpx, "AsyncClient", _Client)
 
-    session_id, trace_id, url = asyncio.run(langfuse.write_langfuse_trace(_payload()))
+    payload = _payload()
+    payload.metadata["langfuse_shape"]["trace"].update(
+        {
+            "input": {"prompt": payload.user_input},
+            "output": {"answer": payload.assistant_output},
+        }
+    )
+    session_id, trace_id, url = asyncio.run(langfuse.write_langfuse_trace(payload))
 
     assert session_id == "session-1"
     assert trace_id == "deepseek_session-1"
@@ -127,4 +158,8 @@ def test_write_langfuse_trace_sends_trimmed_metadata(monkeypatch) -> None:
     body = captured["json"]["batch"][0]["body"]  # type: ignore[index]
     assert body["metadata"]["counts"]["tool_calls"] == 1
     assert "conversation" not in body["metadata"]
+    assert body["input"] == payload.user_input
+    assert body["output"] == payload.assistant_output
+    assert "input" not in body["metadata"]["langfuse_shape"]["trace"]
+    assert "output" not in body["metadata"]["langfuse_shape"]["trace"]
     assert len(json.dumps(body)) < MAX_TRACE_BODY_BYTES

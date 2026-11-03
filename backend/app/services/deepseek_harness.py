@@ -14,8 +14,8 @@ Event payloads follow the harness ``SessionEventMap``: ``user/message``,
 session's user input.
 
 Shell results keep dsh's terminal markers instead of flattening them to 0/1:
-``exit_code`` is absent for commands that timed out, were killed, stopped, or
-were promoted to a background job, and ``status`` says which. The complete log
+``exit_code`` may be null for stopped commands or calls promoted to a background
+job, and ``status`` distinguishes terminal outcomes. The complete log
 travels in ``raw`` (stored as the session's raw artifact) rather than inside
 ``metadata``, which is returned by the list API.
 """
@@ -36,11 +36,12 @@ ZSTD_MAGIC = b"\x28\xb5\x2f\xfd"
 SHELL_TOOLS = frozenset({"bash", "shell", "sh", "terminal", "pwsh", "powershell"})
 FILE_TOOLS = frozenset({"write", "edit", "apply_patch", "str_replace_editor", "notebook_edit"})
 EXIT_CODE_PATTERN = re.compile(r"\[exit code: (-?\d+)\]")
-# The shell tools append at most one terminal-status marker after the output.
+# The shell tools append a group of terminal-status marker lines after the output.
 SIGNAL_PATTERN = re.compile(r"\[killed by signal: ([A-Za-z0-9_]+)\]")
 TIMEOUT_PATTERN = re.compile(r"\[timed out after \d+ms\]")
 STOPPED_PATTERN = re.compile(r"\[stopped: [^\]]*\]")
 BACKGROUND_PATTERN = re.compile(r"\[still running after \d+ms; moved to background job ([^\]]+)\]")
+SHELL_STATUS_PATTERNS = (EXIT_CODE_PATTERN, SIGNAL_PATTERN, TIMEOUT_PATTERN, STOPPED_PATTERN, BACKGROUND_PATTERN)
 SUPPORTED_VERSIONS = frozenset({2, 3, 4})
 MAX_LOG_BYTES = 64 * 1024 * 1024
 
@@ -519,24 +520,35 @@ def _parse_arguments(value: Any) -> Any:
 def _shell_result(output: str, is_error: bool) -> tuple[int | None, str, str | None]:
     """Recover the exit status dsh renders into the tool result.
 
-    ``dsh-tool-bash`` appends at most one terminal marker: a timeout, a kill
-    signal, a human stop, or a non-zero exit code. Promoted commands instead end
-    with a background-job marker, and those have no exit status yet.
+    Only the final group of complete marker lines is status metadata; earlier
+    marker-like text is command output. Timeout/stop reasons may precede an
+    exit/signal marker. Promoted calls end with a background-job marker.
     """
-    if TIMEOUT_PATTERN.search(output):
-        return 124, "timed_out", None
-    signal_name = SIGNAL_PATTERN.findall(output)
-    if signal_name:
-        return _signal_exit_code(signal_name[-1]), "killed", None
-    if STOPPED_PATTERN.search(output):
-        return None, "stopped", None
-    background = BACKGROUND_PATTERN.findall(output)
+    markers = _terminal_status_text(output)
+    last_marker = markers.rsplit("\n", 1)[-1]
+    background = BACKGROUND_PATTERN.fullmatch(last_marker)
     if background:
-        return None, "running", background[-1].strip() or None
-    matches = EXIT_CODE_PATTERN.findall(output)
+        return None, "running", background[1].strip() or None
+    if TIMEOUT_PATTERN.search(markers):
+        return 124, "timed_out", None
+    if STOPPED_PATTERN.search(markers):
+        return None, "stopped", None
+    signal_name = SIGNAL_PATTERN.fullmatch(last_marker)
+    if signal_name:
+        return _signal_exit_code(signal_name[1]), "killed", None
+    matches = EXIT_CODE_PATTERN.fullmatch(last_marker)
     if matches:
-        return int(matches[-1]), "completed", None
+        return int(matches[1]), "completed", None
     return (1 if is_error else 0), ("error" if is_error else "completed"), None
+
+
+def _terminal_status_text(output: str) -> str:
+    markers: list[str] = []
+    for line in reversed(output.split("\n")):
+        if not any(pattern.fullmatch(line) for pattern in SHELL_STATUS_PATTERNS):
+            break
+        markers.append(line)
+    return "\n".join(reversed(markers))
 
 
 def _signal_exit_code(name: str) -> int | None:

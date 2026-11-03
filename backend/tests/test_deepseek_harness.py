@@ -27,8 +27,16 @@ FULL_LOG_ROWS = 11
 
 
 class _FakeStorage:
+    def __init__(self) -> None:
+        self.artifacts: dict[str, dict[str, Any]] = {}
+
     def put_json(self, prefix: str, payload: dict[str, Any]) -> str:
-        return f"memory://{prefix}/{payload.get('external_session_id', 'session')}.json"
+        uri = f"memory://{prefix}/{len(self.artifacts)}.json"
+        self.artifacts[uri] = payload
+        return uri
+
+    def get_json(self, uri: str) -> dict[str, Any]:
+        return self.artifacts[uri]
 
 
 async def _fake_write_langfuse_trace(payload: Any) -> tuple[str | None, str | None, str | None]:
@@ -37,7 +45,8 @@ async def _fake_write_langfuse_trace(payload: Any) -> tuple[str | None, str | No
 
 @pytest.fixture(autouse=True)
 def _patch_session_side_effects(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(session_routes, "ObjectStorage", lambda: _FakeStorage())
+    storage = _FakeStorage()
+    monkeypatch.setattr(session_routes, "ObjectStorage", lambda: storage)
     monkeypatch.setattr(session_routes, "write_langfuse_trace", _fake_write_langfuse_trace)
 
 
@@ -429,6 +438,36 @@ def test_shell_result_recovers_terminal_markers(output: str, expected: tuple[int
     assert deepseek_harness._shell_result(output, False) == expected
 
 
+@pytest.mark.parametrize(
+    "marker",
+    [
+        "[exit code: 127]",
+        "[killed by signal: SIGTERM]",
+        "[timed out after 30000ms]",
+        "[stopped: user]",
+        "[still running after 60000ms; moved to background job bash-9]",
+    ],
+)
+@pytest.mark.parametrize("layout", ["fixture: {marker}", "{marker}\nall tests passed", "{marker}\n"])
+def test_shell_result_ignores_marker_like_stdout(marker: str, layout: str) -> None:
+    assert deepseek_harness._shell_result(layout.format(marker=marker), False) == (0, "completed", None)
+
+
+@pytest.mark.parametrize(
+    ("output", "expected"),
+    [
+        ("slow\n[timed out after 30000ms]\n[killed by signal: SIGTERM]", (124, "timed_out", None)),
+        ("slow\n[timed out after 30000ms]\n[exit code: 143]", (124, "timed_out", None)),
+        ("work\n[stopped: user]\n[killed by signal: SIGTERM]", (None, "stopped", None)),
+        ("work\n[stopped: user]\n[exit code: 137]", (None, "stopped", None)),
+        ("[killed by signal: SIGTERM]\n[exit code: 2]", (2, "completed", None)),
+        ("[still running after 60000ms; moved to background job bash-9]", (None, "running", "bash-9")),
+    ],
+)
+def test_shell_result_handles_terminal_marker_groups(output: str, expected: tuple[int | None, str, str | None]) -> None:
+    assert deepseek_harness._shell_result(output, False) == expected
+
+
 def test_shell_result_falls_back_to_error_status() -> None:
     assert deepseek_harness._shell_result("Error: tool call aborted", True) == (1, "error", None)
 
@@ -523,6 +562,27 @@ def test_auto_upload_recognizes_deepseek_log(client: TestClient, db: Session) ->
     assert "messages" not in metadata
     assert metadata["conversation"]
     assert body["raw_artifact_uri"]
+
+
+def test_uploaded_session_details_keep_parsed_transcript_and_raw_artifact(client: TestClient, db: Session) -> None:
+    _restore_upload_user(db)
+    path = Path(__file__).resolve().parents[2] / "examples" / "deepseek-harness-session.v4.jsonl"
+    log = path.read_text(encoding="utf-8")
+    uploaded = client.post(f"{BASE}/upload/auto", files={"file": (path.name, log, "application/x-ndjson")})
+    assert uploaded.status_code == HTTP_OK, uploaded.text
+    session_id = uploaded.json()["id"]
+
+    details = client.get(f"{BASE}/{session_id}")
+    artifact = client.get(f"{BASE}/{session_id}/raw")
+
+    assert details.status_code == HTTP_OK, details.text
+    assert artifact.status_code == HTTP_OK, artifact.text
+    conversation = details.json()["metadata_json"]["conversation"]
+    assert [item["role"] for item in conversation] == ["user", "thinking", "shell", "assistant"]
+    assert conversation[0]["content"] == "Check the project test command."
+    assert conversation[-1]["content"] == "Use uv run pytest to run the tests."
+    assert artifact.json()["rows"] == [json.loads(line) for line in log.splitlines()]
+    assert "conversation" not in artifact.json()
 
 
 def test_auto_upload_accepts_zstd_artifact(client: TestClient, db: Session) -> None:

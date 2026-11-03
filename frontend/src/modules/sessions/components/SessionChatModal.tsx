@@ -2,7 +2,7 @@ import { RotateCcw, Search, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { t } from '../../../config/i18n';
 import { request } from '../../../core/api/client';
-import { extractChatBlocks, isCollapsedByDefault, matchesBlockQuery } from '../../../core/utils/chat';
+import { extractSessionChatBlocks, isCollapsedByDefault, matchesBlockQuery } from '../../../core/utils/chat';
 import type { JsonValue, Session } from '../../../types/domain';
 
 export function SessionChatModal({ sessionId, onClose }: { sessionId: string; onClose: () => void }) {
@@ -17,7 +17,8 @@ export function SessionChatModal({ sessionId, onClose }: { sessionId: string; on
     void request<Session>(`/sessions/${sessionId}`).then(setSession);
     void request<JsonValue>(`/sessions/${sessionId}/raw`).then(setRaw);
   }, [sessionId]);
-  const blocks = extractChatBlocks(raw);
+  const blocks = extractSessionChatBlocks(session?.metadata_json, raw);
+  const transcriptReady = blocks.length > 0 || raw !== null;
   const visibleBlocks = blocks.filter(block => matchesBlockQuery(block, blockQuery));
   return (
     <div className="modalOverlay" role="presentation" onMouseDown={onClose}>
@@ -43,8 +44,8 @@ export function SessionChatModal({ sessionId, onClose }: { sessionId: string; on
           <span>{t.blockSearchSummary.replace('{visible}', String(visibleBlocks.length)).replace('{total}', String(blocks.length))}</span>
         </div>
         <div className="chatTranscript">
-          {!raw && <div className="chatBubble system">{t.loading}</div>}
-          {raw && visibleBlocks.length === 0 && <div className="chatBubble system">{t.noMatchingBlocks}</div>}
+          {!transcriptReady && <div className="chatBubble system">{t.loading}</div>}
+          {transcriptReady && visibleBlocks.length === 0 && <div className="chatBubble system">{t.noMatchingBlocks}</div>}
           {visibleBlocks.map((block, index) => (
             <article className={`chatMessage ${block.kind}`} key={`${block.kind}-${index}`}>
               <details className="chatBubble" open={!isCollapsedByDefault(block.kind)}>

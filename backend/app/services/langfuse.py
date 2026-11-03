@@ -39,12 +39,9 @@ def trace_metadata(payload: SessionImport) -> dict[str, Any]:
 
     conversation = payload.metadata.get("conversation")
     shape = metadata.get("langfuse_shape")
-    if isinstance(shape, dict) and isinstance(shape.get("observations"), list):
-        metadata["langfuse_shape"] = {
-            **{key: value for key, value in shape.items() if key != "observations"},
-            "observation_count": len(shape["observations"]),
-        }
-        trimmed.append("langfuse_shape.observations")
+    if isinstance(shape, dict):
+        metadata["langfuse_shape"], shape_trimmed = _trim_trace_shape(shape)
+        trimmed.extend(shape_trimmed)
 
     metadata["counts"] = {
         "conversation": len(conversation) if isinstance(conversation, list) else 0,
@@ -56,6 +53,22 @@ def trace_metadata(payload: SessionImport) -> dict[str, Any]:
     if trimmed:
         metadata["trimmed_keys"] = sorted(trimmed)
     return metadata
+
+
+def _trim_trace_shape(shape: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
+    result = dict(shape)
+    trimmed: list[str] = []
+    if "observations" in result:
+        observations = result.pop("observations")
+        result["observation_count"] = len(observations) if isinstance(observations, list) else 0
+        trimmed.append("langfuse_shape.observations")
+    trace = result.get("trace")
+    if isinstance(trace, dict):
+        removed = [key for key in ("input", "output") if key in trace]
+        if removed:
+            result["trace"] = {key: value for key, value in trace.items() if key not in removed}
+            trimmed.extend(f"langfuse_shape.trace.{key}" for key in removed)
+    return result, trimmed
 
 
 async def write_langfuse_trace(payload: SessionImport) -> tuple[str | None, str | None, str | None]:
