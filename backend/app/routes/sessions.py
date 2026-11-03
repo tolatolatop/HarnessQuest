@@ -11,6 +11,11 @@ from app.dependencies import get_current_user
 from app.models import AgentSession, Project, User
 from app.schemas import PaginatedSessionRead, SessionImport, SessionRead
 from app.services.claude_jsonl import convert_claude_jsonl_content
+from app.services.deepseek_harness import (
+    convert_deepseek_harness_content,
+    decode_harness_log,
+    looks_like_harness_log,
+)
 from app.services.langfuse import write_langfuse_trace
 from app.services.opencode_export import convert_opencode_export_content
 from app.services.session_search import search_predicate, set_search_inputs
@@ -358,9 +363,12 @@ async def update_auto_session_file(
 
 async def _parse_auto_upload(file: UploadFile, project_name: str | None, current_user: User) -> SessionImport:
     content = await file.read()
-    text = content.decode("utf-8")
+    text = _decode_log_text(content)
     filename = file.filename or "agent-session"
     errors: list[str] = []
+
+    if looks_like_harness_log(text):
+        return _parse_deepseek_jsonl_text(text, filename, project_name, current_user)
 
     if _looks_like_claude_jsonl(text):
         try:
@@ -397,7 +405,7 @@ async def _parse_auto_upload(file: UploadFile, project_name: str | None, current
 
     detail = (
         "Unable to identify session record format. Supported formats: "
-        "Claude Code JSONL, opencode JSON export, HarnessQuest JSON."
+        "Claude Code JSONL, opencode JSON export, DeepSeek Harness JSONL, HarnessQuest JSON."
     )
     if errors:
         detail = f"{detail} Tried: {'; '.join(errors)}"
@@ -438,6 +446,14 @@ async def _parse_claude_jsonl_upload(file: UploadFile, project_name: str | None,
         return SessionImport.model_validate(payload_data)
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"Invalid Claude Code JSONL payload: {exc}") from exc
+
+
+def _decode_log_text(content: bytes) -> str:
+    """Decode UTF-8 JSONL text or a Zstandard-compressed DeepSeek Harness artifact."""
+    try:
+        return decode_harness_log(content)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 def _looks_like_claude_jsonl(content: str) -> bool:
@@ -506,3 +522,46 @@ async def _parse_opencode_json_upload(file: UploadFile, project_name: str | None
         return SessionImport.model_validate(payload_data)
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"Invalid opencode JSON export payload: {exc}") from exc
+
+
+@router.post("/upload/deepseek-jsonl", response_model=SessionRead)
+async def upload_deepseek_jsonl_file(
+    file: UploadFile,
+    project_name: str | None = None,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> AgentSession:
+    payload = await _parse_deepseek_jsonl_upload(file, project_name, current_user)
+    return await import_session(payload, current_user, db)
+
+
+@router.put("/upload/deepseek-jsonl", response_model=SessionRead)
+async def update_deepseek_jsonl_file(
+    file: UploadFile,
+    project_name: str | None = None,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> AgentSession:
+    payload = await _parse_deepseek_jsonl_upload(file, project_name, current_user)
+    return await update_imported_session(payload, current_user, db)
+
+
+async def _parse_deepseek_jsonl_upload(file: UploadFile, project_name: str | None, current_user: User) -> SessionImport:
+    content = await file.read()
+    text = _decode_log_text(content)
+    return _parse_deepseek_jsonl_text(text, file.filename or "session.jsonl", project_name, current_user)
+
+
+def _parse_deepseek_jsonl_text(
+    text: str, filename: str, project_name: str | None, current_user: User
+) -> SessionImport:
+    try:
+        payload_data = convert_deepseek_harness_content(
+            text,
+            source_name=filename,
+            project_name=project_name,
+            user_email=current_user.email,
+        )
+        return SessionImport.model_validate(payload_data)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=f"Invalid DeepSeek Harness JSONL payload: {exc}") from exc

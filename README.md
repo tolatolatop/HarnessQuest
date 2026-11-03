@@ -68,7 +68,7 @@ Upload a JSON file:
 harnessquest upload examples/sample-session.json --base-url http://localhost:8000
 ```
 
-Upload a Claude Code JSONL, opencode export JSON, or HarnessQuest JSON payload with auto-detection:
+Upload a Claude Code JSONL, opencode export JSON, DeepSeek Harness JSONL/Zstandard log, or HarnessQuest JSON payload with auto-detection:
 
 ```bash
 harnessquest auto-upload agent-session.json
@@ -81,7 +81,14 @@ opencode export <sessionID> > opencode-session.json
 harnessquest auto-upload opencode-session.json --base-url http://localhost:8000
 ```
 
-The web console auto-detects Claude Code JSONL and opencode JSON when creating a case from an uploaded session record.
+Upload a DeepSeek Harness session, including its default compressed artifact:
+
+```bash
+harnessquest auto-upload examples/deepseek-harness-session.v4.jsonl
+harnessquest deepseek-upload session.v4.jsonl.zstd --json
+```
+
+The web console auto-detects these formats when uploading a session or creating a case. See [DeepSeek Harness import](docs/deepseek-harness-import.md) for supported versions, API endpoints, and output fields.
 
 Create a case from the uploaded session in the UI, or via CLI:
 

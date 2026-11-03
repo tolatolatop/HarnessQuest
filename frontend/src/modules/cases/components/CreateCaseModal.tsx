@@ -100,7 +100,7 @@ export function CreateCaseModal({ knownProblemTypes, initialSession, onClose, on
           <label>{t.feedbackReporter}<input value={feedbackReporter} onChange={e => setFeedbackReporter(e.target.value)} /></label>
           <label>{t.responsibleOwner}<ResponsibleOwnerSelect value={responsibleOwner} onChange={setResponsibleOwner} /></label>
           <label>{t.tags}<input value={tags} onChange={e => setTags(e.target.value)} placeholder={t.tagsPlaceholder} /></label>
-          {!usesExistingSession && <label>{t.sessionRecordFile}（{t.optional}）<input type="file" accept=".json,.jsonl,application/json,application/jsonl,text/plain" onChange={e => setFile(e.target.files?.[0] ?? null)} /></label>}
+          {!usesExistingSession && <label>{t.sessionRecordFile}（{t.optional}）<input type="file" accept=".json,.jsonl,.zstd,application/json,application/jsonl,application/zstd,text/plain" onChange={e => setFile(e.target.files?.[0] ?? null)} /></label>}
           {error && <div className="error">{error}</div>}
         </div>
         <footer className="modalFooter">

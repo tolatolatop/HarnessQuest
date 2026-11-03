@@ -101,6 +101,34 @@ def opencode_upload(
         rich_print(f"[green]created case[/green] {case['id']}")
 
 
+@app.command("deepseek-upload")
+def deepseek_upload(
+    path: Path = typer.Argument(..., exists=True, dir_okay=False),
+    case_title: str | None = typer.Option(None),
+    base_url: str = typer.Option("http://localhost:8000", envvar="HARNESSQUEST_BASE_URL"),
+    token: str | None = typer.Option(None, envvar="HARNESSQUEST_TOKEN"),
+    json_output: bool = typer.Option(False, "--json", help="Print the session and optional case as JSON."),
+) -> None:
+    """Upload a DeepSeek Harness session log (session[.vN].jsonl or .jsonl.zstd)."""
+    client = _client(base_url, token)
+    session = client.upload_deepseek_jsonl(path)
+    case = None
+    if case_title:
+        case = client.create_case(
+            title=case_title,
+            session_id=session["id"],
+            source="offline_log_import",
+            severity="medium",
+            problem_type="other",
+        )
+    if json_output:
+        typer.echo(json.dumps({"session": session, "case": case}, ensure_ascii=False))
+    else:
+        rich_print(f"[green]uploaded deepseek harness session[/green] {path} -> session {session['id']}")
+        if case:
+            rich_print(f"[green]created case[/green] {case['id']}")
+
+
 @app.command("auto-upload")
 def auto_upload(
     path: Path = typer.Argument(..., exists=True),
@@ -110,7 +138,9 @@ def auto_upload(
 ) -> None:
     client = _client(base_url, token)
     session = client.upload_auto(path)
-    rich_print(f"[green]uploaded auto-detected session[/green] {path} -> session {session['id']} ({session['agent_type']})")
+    rich_print(
+        f"[green]uploaded auto-detected session[/green] {path} -> session {session['id']} ({session['agent_type']})"
+    )
     if case_title:
         case = client.create_case(
             title=case_title,

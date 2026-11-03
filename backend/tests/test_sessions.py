@@ -85,7 +85,7 @@ def test_search_import_raw_and_single_input(client: TestClient) -> None:
     assert client.get(BASE, params={"q": "single-input-marker"}).json()["total"] == 1
 
 
-@pytest.mark.parametrize("format_name", ["claude", "opencode"])
+@pytest.mark.parametrize("format_name", ["claude", "opencode", "deepseek"])
 def test_search_auto_upload_preserves_complete_user_turns(client: TestClient, db: Session, format_name: str) -> None:
     # The shared client fixture recreates tables after its token fixture runs.
     # Upload converters need an actual current user, so restore that test row.
@@ -104,16 +104,35 @@ def test_search_auto_upload_preserves_complete_user_turns(client: TestClient, db
                 {"type": "tool_result", "content": "excluded-tool-marker"},
             ]}},
         ])
-    else:
+    elif format_name == "opencode":
         content = json.dumps({"session": {"id": "opencode-search"}, "messages": [
             {"info": {"role": "user"}, "parts": first_parts},
             {"info": {"role": "user"}, "parts": last_parts},
         ]})
+    else:
+        content = "\n".join(json.dumps(row) for row in [
+            {"type": "session", "version": 4, "id": "deepseek-search", "createdAt": 1_760_000_000_000,
+             "isSeeded": False, "delegationDepth": 0},
+            {"type": "user/message", "seq": 1, "time": 1_760_000_001_000, "surfaceOp": "append",
+             "data": {"role": "user", "id": "m1", "source": {"kind": "user"}, "content": first_parts}},
+            # Injected context is not a user turn and must stay out of the endpoints.
+            {"type": "user/message", "seq": 2, "time": 1_760_000_001_100, "surfaceOp": "append",
+             "data": {"role": "user", "id": "m2", "source": {"kind": "runtime-context"},
+                      "content": [{"type": "text", "text": "excluded-context-marker"}]}},
+            {"type": "user/message", "seq": 3, "time": 1_760_000_001_200, "surfaceOp": "append",
+             "data": {"role": "user", "id": "m3", "source": {"kind": "user"}, "content": last_parts}},
+            {"type": "tool/result", "seq": 4, "time": 1_760_000_001_300, "surfaceOp": "append",
+             "data": {"turn": 1, "step": 1, "message": {
+                 "role": "tool", "id": "m4", "source": {"kind": "tool", "callId": "c1"},
+                 "toolCallId": "c1", "isError": False,
+                 "content": [{"type": "text", "text": "excluded-tool-marker"}]}}},
+        ]) + "\n"
     result = client.post(f"{BASE}/upload/auto", files={"file": ("session.json", content, "application/json")})
     assert result.status_code == HTTP_OK, result.text
     for keyword in ("first-block-marker\nsecond-block-marker", "latest-block-marker", "untruncated-tail-marker"):
         assert client.get(BASE, params={"q": keyword}).json()["total"] == 1, (keyword, result.json())
-    assert client.get(BASE, params={"q": "excluded-tool-marker"}).json()["total"] == 0
+    for keyword in ("excluded-tool-marker", "excluded-context-marker"):
+        assert client.get(BASE, params={"q": keyword}).json()["total"] == 0, keyword
 
 
 def test_search_combines_filters_and_pagination(client: TestClient) -> None:
