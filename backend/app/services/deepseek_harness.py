@@ -12,11 +12,18 @@ Event payloads follow the harness ``SessionEventMap``: ``user/message``,
 ``source.kind`` — ``user`` for a real prompt, other kinds for injected context
 (runtime snapshot, relayed agent message, notices) that must not become the
 session's user input.
+
+Shell results keep dsh's terminal markers instead of flattening them to 0/1:
+``exit_code`` is absent for commands that timed out, were killed, stopped, or
+were promoted to a background job, and ``status`` says which. The complete log
+travels in ``raw`` (stored as the session's raw artifact) rather than inside
+``metadata``, which is returned by the list API.
 """
 
 import io
 import json
 import re
+import signal
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -25,9 +32,15 @@ from typing import Any
 import zstandard
 
 ZSTD_MAGIC = b"\x28\xb5\x2f\xfd"
+# Exact tool names only: substring matching would file `todo_write` under file edits.
 SHELL_TOOLS = frozenset({"bash", "shell", "sh", "terminal", "pwsh", "powershell"})
 FILE_TOOLS = frozenset({"write", "edit", "apply_patch", "str_replace_editor", "notebook_edit"})
 EXIT_CODE_PATTERN = re.compile(r"\[exit code: (-?\d+)\]")
+# The shell tools append at most one terminal-status marker after the output.
+SIGNAL_PATTERN = re.compile(r"\[killed by signal: ([A-Za-z0-9_]+)\]")
+TIMEOUT_PATTERN = re.compile(r"\[timed out after \d+ms\]")
+STOPPED_PATTERN = re.compile(r"\[stopped: [^\]]*\]")
+BACKGROUND_PATTERN = re.compile(r"\[still running after \d+ms; moved to background job ([^\]]+)\]")
 SUPPORTED_VERSIONS = frozenset({2, 3, 4})
 MAX_LOG_BYTES = 64 * 1024 * 1024
 
@@ -126,6 +139,9 @@ def convert_deepseek_harness_content(
         "shell_commands": state.shell_commands,
         "file_edits": state.file_edits,
         "errors": state.errors,
+        # The raw artifact keeps the complete log; metadata keeps parsed views only, so
+        # storage, list responses and Langfuse never carry the log twice.
+        "raw": {"format": "deepseek_harness_jsonl", "header": header, "rows": rows},
         "metadata": {
             "converter": "harnessquest.deepseek_harness.v1",
             "deepseek_harness": {
@@ -142,10 +158,8 @@ def convert_deepseek_harness_content(
                 "event_count": len(events),
                 "row_count": len(rows),
                 "turns": state.turns,
-                "raw_rows": rows,
             },
             "conversation": state.conversation,
-            "messages": state.conversation,
             "langfuse_shape": {
                 "sessionId": session_id,
                 "trace": {
@@ -292,13 +306,16 @@ def _handle_tool_result(state: _ParseState, data: dict[str, Any], timestamp: str
     else:
         state.conversation.append(item)
     if role == "shell":
-        state.shell_commands.append(
-            {
-                "command": _command_text(input_value),
-                "exit_code": _exit_code(output, is_error),
-                "output": output,
-            }
-        )
+        exit_code, status, background_job = _shell_result(output, is_error)
+        command: dict[str, Any] = {
+            "command": _command_text(input_value),
+            "exit_code": exit_code,
+            "status": status,
+            "output": output,
+        }
+        if background_job:
+            command["background_job"] = background_job
+        state.shell_commands.append(command)
     if role == "file":
         state.file_edits.extend(_file_edits(data.get("meta"), input_value, output))
 
@@ -363,10 +380,10 @@ def _handle_turn_end(state: _ParseState, data: dict[str, Any]) -> None:
 
 
 def _tool_role(name: str) -> str:
-    normalized = name.lower()
-    if normalized in SHELL_TOOLS or "bash" in normalized or "shell" in normalized:
+    normalized = name.strip().lower()
+    if normalized in SHELL_TOOLS:
         return "shell"
-    if normalized in FILE_TOOLS or any(word in normalized for word in ("write", "edit", "patch")):
+    if normalized in FILE_TOOLS:
         return "file"
     return "tool"
 
@@ -499,11 +516,34 @@ def _parse_arguments(value: Any) -> Any:
     return parsed
 
 
-def _exit_code(output: str, is_error: bool) -> int:
+def _shell_result(output: str, is_error: bool) -> tuple[int | None, str, str | None]:
+    """Recover the exit status dsh renders into the tool result.
+
+    ``dsh-tool-bash`` appends at most one terminal marker: a timeout, a kill
+    signal, a human stop, or a non-zero exit code. Promoted commands instead end
+    with a background-job marker, and those have no exit status yet.
+    """
+    if TIMEOUT_PATTERN.search(output):
+        return 124, "timed_out", None
+    signal_name = SIGNAL_PATTERN.findall(output)
+    if signal_name:
+        return _signal_exit_code(signal_name[-1]), "killed", None
+    if STOPPED_PATTERN.search(output):
+        return None, "stopped", None
+    background = BACKGROUND_PATTERN.findall(output)
+    if background:
+        return None, "running", background[-1].strip() or None
     matches = EXIT_CODE_PATTERN.findall(output)
     if matches:
-        return int(matches[-1])
-    return 1 if is_error else 0
+        return int(matches[-1]), "completed", None
+    return (1 if is_error else 0), ("error" if is_error else "completed"), None
+
+
+def _signal_exit_code(name: str) -> int | None:
+    try:
+        return 128 + int(signal.Signals[name.upper()])
+    except (KeyError, ValueError):
+        return None
 
 
 def _input_path(input_value: Any) -> str | None:

@@ -192,7 +192,14 @@ def test_converts_messages_tools_and_metadata() -> None:
     assert payload["tool_calls"][0]["name"] == "bash"
     assert payload["tool_calls"][0]["input"] == {"command": "pytest -q", "description": "运行测试"}
     assert payload["tool_calls"][0]["tool_call_id"] == "call-1"
-    assert payload["shell_commands"] == [{"command": "pytest -q", "exit_code": 2, "output": "2 failed\n[exit code: 2]"}]
+    assert payload["shell_commands"] == [
+        {
+            "command": "pytest -q",
+            "exit_code": 2,
+            "status": "completed",
+            "output": "2 failed\n[exit code: 2]",
+        }
+    ]
     assert payload["errors"] == []
     deepseek = payload["metadata"]["deepseek_harness"]
     assert deepseek["format_version"] == FORMAT_VERSION
@@ -389,7 +396,12 @@ def test_assistant_text_blocks_are_joined_and_unknown_events_retained() -> None:
     payload = convert_deepseek_harness_content(log, source_name="session.jsonl", project_name="override")
 
     assert payload["assistant_output"] == "first paragraph\nlast paragraph"
-    assert payload["metadata"]["deepseek_harness"]["raw_rows"][1] == unknown
+    # The complete log is the raw artifact; metadata keeps parsed views only.
+    assert payload["raw"]["rows"][1] == unknown
+    assert payload["raw"]["format"] == "deepseek_harness_jsonl"
+    assert "raw_rows" not in payload["metadata"]["deepseek_harness"]
+    assert "messages" not in payload["metadata"]
+    assert payload["metadata"]["conversation"]
     assert payload["project_name"] == "override"
     assert looks_like_harness_log(log)
 
@@ -399,6 +411,83 @@ def test_timestamps_are_always_epoch_milliseconds() -> None:
 
     assert payload["started_at"] == "1970-01-01T00:00:01+00:00"
     assert payload["ended_at"] == payload["started_at"]
+
+
+@pytest.mark.parametrize(
+    ("output", "expected"),
+    [
+        ("done\n[exit code: 0]", (0, "completed", None)),
+        ("boom\n[exit code: 127]", (127, "completed", None)),
+        ("killed\n[killed by signal: SIGTERM]", (143, "killed", None)),
+        ("slow\n[timed out after 30000ms]", (124, "timed_out", None)),
+        ("stopped\n[stopped: user]", (None, "stopped", None)),
+        ("waiting\n[still running after 60000ms; moved to background job bash-9]", (None, "running", "bash-9")),
+        ("plain output", (0, "completed", None)),
+    ],
+)
+def test_shell_result_recovers_terminal_markers(output: str, expected: tuple[int | None, str, str | None]) -> None:
+    assert deepseek_harness._shell_result(output, False) == expected
+
+
+def test_shell_result_falls_back_to_error_status() -> None:
+    assert deepseek_harness._shell_result("Error: tool call aborted", True) == (1, "error", None)
+
+
+def test_unknown_signal_name_keeps_status_without_exit_code() -> None:
+    assert deepseek_harness._shell_result("[killed by signal: SIGHUPX]", False) == (None, "killed", None)
+
+
+def test_shell_commands_keep_background_and_killed_semantics() -> None:
+    log = _log(
+        _header(),
+        _user_message(PROMPT, seq=1, time=1_760_000_001_000),
+        _tool_call("bash", {"command": "sleep 100"}, "call-1", seq=2, time=1_760_000_001_100),
+        _tool_result(
+            "waiting\n[still running after 60000ms; moved to background job bash-9]",
+            "call-1",
+            seq=3,
+            time=1_760_000_001_200,
+        ),
+        _tool_call("bash", {"command": "tail -f /dev/null"}, "call-2", seq=4, time=1_760_000_001_300),
+        _tool_result("killed\n[killed by signal: SIGTERM]", "call-2", seq=5, time=1_760_000_001_400),
+    )
+
+    payload = convert_deepseek_harness_content(log, source_name="session.jsonl")
+
+    assert payload["shell_commands"] == [
+        {
+            "command": "sleep 100",
+            "exit_code": None,
+            "status": "running",
+            "output": "waiting\n[still running after 60000ms; moved to background job bash-9]",
+            "background_job": "bash-9",
+        },
+        {
+            "command": "tail -f /dev/null",
+            "exit_code": 143,
+            "status": "killed",
+            "output": "killed\n[killed by signal: SIGTERM]",
+        },
+    ]
+
+
+@pytest.mark.parametrize(
+    ("name", "role"),
+    [
+        ("bash", "shell"),
+        ("pwsh", "shell"),
+        ("write", "file"),
+        ("edit", "file"),
+        ("apply_patch", "file"),
+        ("str_replace_editor", "file"),
+        ("todo_write", "tool"),
+        ("read_image", "tool"),
+        ("job_output", "tool"),
+        ("write_note", "tool"),
+    ],
+)
+def test_tool_roles_use_exact_names(name: str, role: str) -> None:
+    assert deepseek_harness._tool_role(name) == role
 
 
 @pytest.mark.parametrize("compressed", [False, True])
@@ -427,7 +516,13 @@ def test_auto_upload_recognizes_deepseek_log(client: TestClient, db: Session) ->
     body = response.json()
     assert body["agent_type"] == "deepseek_harness"
     assert body["external_session_id"] == SESSION_ID
-    assert body["metadata_json"]["deepseek_harness"]["model"] == "deepseek-chat"
+    metadata = body["metadata_json"]
+    assert metadata["deepseek_harness"]["model"] == "deepseek-chat"
+    # The list API returns metadata_json: the raw log must stay in the raw artifact.
+    assert "raw_rows" not in metadata["deepseek_harness"]
+    assert "messages" not in metadata
+    assert metadata["conversation"]
+    assert body["raw_artifact_uri"]
 
 
 def test_auto_upload_accepts_zstd_artifact(client: TestClient, db: Session) -> None:
