@@ -6,9 +6,10 @@ import { createServer } from 'vite';
 // Use the project's existing TypeScript loader; no extra test framework is needed.
 const server = await createServer({ configFile: false, server: { middlewareMode: true, hmr: false } });
 let extractChatBlocks;
+let extractSessionChatBlocks;
 let chatRecognition;
 try {
-  ({ extractChatBlocks } = await server.ssrLoadModule('/src/core/utils/chat.ts'));
+  ({ extractChatBlocks, extractSessionChatBlocks } = await server.ssrLoadModule('/src/core/utils/chat.ts'));
   ({ chatRecognition } = await server.ssrLoadModule('/src/config/chatRecognition.ts'));
 } finally {
   await server.close();
@@ -101,4 +102,35 @@ test('raw row arrays and unusable sources fall back without throwing', () => {
   assert.deepEqual(kinds({ metadata: { claude: { raw_rows: [{ type: 'assistant', message: { content: 'hello' } }] } } }), ['assistant']);
   assert.deepEqual(kinds({ conversation: [null, 'bad'], user_input: 'hello' }), ['user']);
   assert.deepEqual(kinds(null), []);
+});
+
+test('DeepSeek session details use the parsed transcript while keeping the original artifact', async () => {
+  const log = await readFile(new URL('../../examples/deepseek-harness-session.v4.jsonl', import.meta.url), 'utf8');
+  const rows = log.trim().split('\n').map(line => JSON.parse(line));
+  const raw = deepFreeze({ format: 'deepseek_harness_jsonl', header: rows[0], rows });
+  const metadata = deepFreeze({ conversation: [
+    { role: 'user', content: 'Check the project test command.' },
+    { role: 'thinking', content: 'Read the project configuration.' },
+    { role: 'shell', title: 'cat pyproject.toml', content: 'Input:\ncat pyproject.toml\n\nOutput:\n[tool.pytest.ini_options]' },
+    { role: 'assistant', content: 'Use uv run pytest to run the tests.' },
+  ] });
+  const before = JSON.stringify({ metadata, raw });
+
+  const blocks = extractSessionChatBlocks(metadata, raw);
+
+  assert.deepEqual(blocks.map(block => block.kind), ['user', 'thinking', 'shell', 'assistant']);
+  assert.equal(blocks[0].body, 'Check the project test command.');
+  assert.equal(blocks.at(-1).body, 'Use uv run pytest to run the tests.');
+  assert.deepEqual(extractSessionChatBlocks(metadata, null), blocks);
+  assert.equal(JSON.stringify({ metadata, raw }), before);
+});
+
+test('session transcript falls back to legacy raw artifacts when metadata has no parsed conversation', () => {
+  const raw = { metadata: { conversation: [{ role: 'user', content: 'legacy prompt' }] } };
+  for (const metadata of [undefined, {}, { conversation: [] }, { errors: ['tool failed'] }]) {
+    assert.equal(extractSessionChatBlocks(metadata, raw)[0].body, 'legacy prompt');
+  }
+  assert.deepEqual(extractSessionChatBlocks(undefined, null), []);
+  assert.deepEqual(extractSessionChatBlocks({ conversation: [] }, { format: 'deepseek_harness_jsonl', rows: [] }), []);
+  assert.equal(extractSessionChatBlocks({ user_input: 'summary prompt' }, null)[0].body, 'summary prompt');
 });

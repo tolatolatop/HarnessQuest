@@ -150,7 +150,7 @@ function UploadSessionModal({ onClose, onUploaded }: { onClose: () => void; onUp
         </header>
         <div className="caseCreateBody">
           <label>{t.projectNameOptional}<input value={projectName} onChange={e => setProjectName(e.target.value)} placeholder={t.projectNamePlaceholder} /></label>
-          <label>{t.sessionRecordFile}<input type="file" accept=".json,.jsonl,application/json,application/jsonl,text/plain" required onChange={e => setFile(e.target.files?.[0] ?? null)} /></label>
+          <label>{t.sessionRecordFile}<input type="file" accept=".json,.jsonl,.zstd,application/json,application/jsonl,application/zstd,text/plain" required onChange={e => setFile(e.target.files?.[0] ?? null)} /></label>
           {error && <div className="error">{error}</div>}
         </div>
         <footer className="modalFooter">
