@@ -468,6 +468,23 @@ def test_shell_result_handles_terminal_marker_groups(output: str, expected: tupl
     assert deepseek_harness._shell_result(output, False) == expected
 
 
+BG_NOTICE = (
+    "The command keeps running in the background. You will be notified when it finishes; "
+    "read newer output with job_output, stop it with job_kill."
+)
+
+
+def test_promoted_shell_result_is_detected_after_job_notice() -> None:
+    # dsh renders the marker first and appends its job notice as a second text block.
+    output = f"[still running after 60000ms; moved to background job bash-99]\n{BG_NOTICE}"
+
+    assert deepseek_harness._shell_result(output, False) == (None, "running", "bash-99")
+
+
+def test_job_notice_without_marker_is_plain_output() -> None:
+    assert deepseek_harness._shell_result(f"ok\n{BG_NOTICE}", False) == (0, "completed", None)
+
+
 def test_shell_result_falls_back_to_error_status() -> None:
     assert deepseek_harness._shell_result("Error: tool call aborted", True) == (1, "error", None)
 

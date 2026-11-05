@@ -41,6 +41,11 @@ SIGNAL_PATTERN = re.compile(r"\[killed by signal: ([A-Za-z0-9_]+)\]")
 TIMEOUT_PATTERN = re.compile(r"\[timed out after \d+ms\]")
 STOPPED_PATTERN = re.compile(r"\[stopped: [^\]]*\]")
 BACKGROUND_PATTERN = re.compile(r"\[still running after \d+ms; moved to background job ([^\]]+)\]")
+# A promoted call appends this notice as a second text block after its marker.
+BACKGROUND_NOTICE_PATTERN = re.compile(
+    r"The command keeps running in the background\. You will be notified when it finishes; "
+    r"read newer output with job_output, stop it with job_kill\."
+)
 SHELL_STATUS_PATTERNS = (EXIT_CODE_PATTERN, SIGNAL_PATTERN, TIMEOUT_PATTERN, STOPPED_PATTERN, BACKGROUND_PATTERN)
 SUPPORTED_VERSIONS = frozenset({2, 3, 4})
 MAX_LOG_BYTES = 64 * 1024 * 1024
@@ -545,6 +550,9 @@ def _shell_result(output: str, is_error: bool) -> tuple[int | None, str, str | N
 def _terminal_status_text(output: str) -> str:
     markers: list[str] = []
     for line in reversed(output.split("\n")):
+        # Promoted calls put their marker first and this notice after it.
+        if not markers and BACKGROUND_NOTICE_PATTERN.fullmatch(line.strip()):
+            continue
         if not any(pattern.fullmatch(line) for pattern in SHELL_STATUS_PATTERNS):
             break
         markers.append(line)
