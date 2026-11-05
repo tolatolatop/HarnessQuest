@@ -306,21 +306,26 @@ def _handle_tool_result(state: _ParseState, data: dict[str, Any], timestamp: str
     )
     _record_error(state, data, name, output, call_id, is_error)
     role = _tool_role(name)
+    if role == "shell":
+        exit_code, status, background_job = _shell_result(output, is_error)
+        call["exit_code"] = exit_code
+        call["shell_status"] = status
+        if background_job:
+            call["background_job"] = background_job
     item = _tool_conversation_item(name, role, call, timestamp, row)
     if pending:
         pending["conversation"].update(item)
     else:
         state.conversation.append(item)
     if role == "shell":
-        exit_code, status, background_job = _shell_result(output, is_error)
         command: dict[str, Any] = {
             "command": _command_text(input_value),
-            "exit_code": exit_code,
-            "status": status,
+            "exit_code": call["exit_code"],
+            "status": call["shell_status"],
             "output": output,
         }
-        if background_job:
-            command["background_job"] = background_job
+        if call.get("background_job"):
+            command["background_job"] = call["background_job"]
         state.shell_commands.append(command)
     if role == "file":
         state.file_edits.extend(_file_edits(data.get("meta"), input_value, output))
@@ -408,7 +413,14 @@ def _tool_conversation_item(
         title = _input_path(call.get("input")) or name
     output = call.get("output") if call.get("status") != "pending" else "Pending (no result recorded)"
     content = f"Input:\n{_stringify(call.get('input'))}\n\nOutput:\n{output}"
-    return _conversation_item(role, title, content, timestamp, row)
+    item = _conversation_item(role, title, content, timestamp, row)
+    if role == "shell":
+        # Surfaced by the console as a status pill; not part of the rendered body.
+        item["exit_code"] = call.get("exit_code")
+        item["status"] = call.get("shell_status", "pending")
+        if call.get("background_job"):
+            item["background_job"] = call["background_job"]
+    return item
 
 
 def _shell_title(input_value: Any) -> str | None:

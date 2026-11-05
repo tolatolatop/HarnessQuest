@@ -139,7 +139,7 @@ export function extractChatBlocks(raw: JsonValue | null, config: ChatRecognition
 }
 
 export function isCollapsedByDefault(kind: ChatBlockKind): boolean {
-  return ['tool', 'function', 'mcp', 'skill', 'shell', 'file', 'diff', 'metadata', 'observation'].includes(kind);
+  return ['thinking', 'tool', 'function', 'mcp', 'skill', 'shell', 'file', 'diff', 'metadata', 'observation'].includes(kind);
 }
 
 export function extractSessionChatBlocks(metadata: JsonObject | undefined, raw: JsonValue | null): ChatBlock[] {

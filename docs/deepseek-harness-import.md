@@ -39,7 +39,7 @@ Python SDK 可调用 `HarnessQuestClient.upload_deepseek_jsonl(path)` 或已有�
 | 字段 | 含义 |
 | --- | --- |
 | `user_input` / `assistant_output` | 首条真实用户输入、最后一条含文本的助手消息；同一消息的文本块以换行连接 |
-| `conversation` | 用户、助手、推理、上下文和工具的可读记录（不再额外写一份 `messages` 别名） |
+| `conversation` | 用户、助手、推理、上下文和工具的可读记录（不再额外写一份 `messages` 别名）；shell 条目附带 `exit_code` / `status` / `background_job`，控制台据此显示状态徽标 |
 | `tool_calls` | 按调用顺序保留名称、参数、输出、关联 ID、状态、turn 和 step |
 | `shell_commands` | 已返回结果的命令执行记录，含 `exit_code`、`status`（`completed` / `error` / `running` / `timed_out` / `killed` / `stopped`）与输出 |
 | `file_edits` | 文件工具返回的变更记录 |

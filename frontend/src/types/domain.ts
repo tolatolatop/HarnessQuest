@@ -111,4 +111,13 @@ export type ChatBlockKind =
   | 'observation'
   | 'metadata';
 
-export type ChatBlock = { kind: ChatBlockKind; title: string; body: string; meta?: string };
+export type ChatStatusTone = 'ok' | 'warn' | 'bad' | 'muted';
+
+export type ChatBlock = {
+  kind: ChatBlockKind;
+  title: string;
+  body: string;
+  meta?: string;
+  status?: string;
+  statusTone?: ChatStatusTone;
+};

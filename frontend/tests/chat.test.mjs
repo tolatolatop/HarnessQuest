@@ -7,10 +7,13 @@ import { createServer } from 'vite';
 const server = await createServer({ configFile: false, server: { middlewareMode: true, hmr: false } });
 let extractChatBlocks;
 let extractSessionChatBlocks;
+let isCollapsedByDefault;
 let chatRecognition;
+let formatLocalTimestamp;
 try {
-  ({ extractChatBlocks, extractSessionChatBlocks } = await server.ssrLoadModule('/src/core/utils/chat.ts'));
+  ({ extractChatBlocks, extractSessionChatBlocks, isCollapsedByDefault } = await server.ssrLoadModule('/src/core/utils/chat.ts'));
   ({ chatRecognition } = await server.ssrLoadModule('/src/config/chatRecognition.ts'));
+  ({ formatLocalTimestamp } = await server.ssrLoadModule('/src/core/utils/format.ts'));
 } finally {
   await server.close();
 }
@@ -133,4 +136,40 @@ test('session transcript falls back to legacy raw artifacts when metadata has no
   assert.deepEqual(extractSessionChatBlocks(undefined, null), []);
   assert.deepEqual(extractSessionChatBlocks({ conversation: [] }, { format: 'deepseek_harness_jsonl', rows: [] }), []);
   assert.equal(extractSessionChatBlocks({ user_input: 'summary prompt' }, null)[0].body, 'summary prompt');
+});
+
+test('local timestamps render to the second without a timezone suffix', () => {
+  const expected = (() => {
+    const date = new Date('2026-11-05T03:51:19.012340+00:00');
+    const pad = part => String(part).padStart(2, '0');
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+  })();
+  assert.equal(formatLocalTimestamp('2026-11-05T03:51:19.012340+00:00'), expected);
+  assert.match(formatLocalTimestamp('2026-11-05T03:51:19.012340+00:00'), /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/);
+  // Non-timestamp metadata (e.g. a fallback label) is passed through unchanged.
+  assert.equal(formatLocalTimestamp('工具调用'), '工具调用');
+});
+
+test('thinking blocks collapse by default while dialogue stays open', () => {
+  assert.equal(isCollapsedByDefault('thinking'), true);
+  assert.equal(isCollapsedByDefault('shell'), true);
+  assert.equal(isCollapsedByDefault('user'), false);
+  assert.equal(isCollapsedByDefault('assistant'), false);
+});
+
+test('shell conversation items expose exit status badges', () => {
+  const metadata = deepFreeze({ conversation: [
+    { role: 'shell', title: 'pytest -q', content: 'Input:\n{}\n\nOutput:\n2 failed', exit_code: 2, status: 'completed' },
+    { role: 'shell', title: 'sleep 100', content: 'Input:\n{}\n\nOutput:\nstill running', exit_code: null, status: 'running', background_job: 'bash-9' },
+    { role: 'shell', title: 'tail -f', content: 'Input:\n{}\n\nOutput:\nkilled', exit_code: 143, status: 'killed' },
+    { role: 'shell', title: 'pending call', content: 'Input:\n{}\n\nOutput:\nPending (no result recorded)', status: 'pending' },
+  ] });
+
+  const blocks = extractSessionChatBlocks(metadata, null);
+
+  assert.deepEqual(blocks.map(block => block.statusTone), ['bad', 'warn', 'bad', 'muted']);
+  assert.match(blocks[0].status, /退出码 2/);
+  assert.match(blocks[1].status, /后台运行 · bash-9/);
+  assert.match(blocks[2].status, /信号终止 · 退出码 143/);
+  assert.equal(blocks[3].status, '待返回');
 });

@@ -1234,6 +1234,64 @@ tbody tr.selected {
   line-height: 1.4;
   text-align: right;
 }
+.chatTitle .chatKind {
+  text-align: left;
+}
+
+.chatBadges {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  min-width: 0;
+}
+
+.chatMeta {
+  color: #697169;
+  font-size: 12.5px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.chatStatus {
+  border: 1px solid #cfdad2;
+  border-radius: 999px;
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 750;
+  padding: 2px 8px;
+  white-space: nowrap;
+}
+
+.chatStatus.ok {
+  background: #e2f3e6;
+  border-color: #b7ddc1;
+  color: #1c6a34;
+}
+
+.chatStatus.bad {
+  background: #fde7e2;
+  border-color: #f0b6ab;
+  color: #a52a1b;
+}
+
+.chatStatus.warn {
+  background: #fdf2d8;
+  border-color: #e8cf95;
+  color: #8a5a05;
+}
+
+.chatStatus.muted {
+  background: #e9efea;
+  border-color: #cfdad2;
+  color: #4d5b53;
+}
+
+.chatMore {
+  display: flex;
+  justify-content: center;
+  padding: 2px 0 10px;
+}
 
 .chatBubble pre {
   border-top: 1px solid #dce4df;

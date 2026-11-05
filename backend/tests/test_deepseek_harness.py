@@ -209,6 +209,8 @@ def test_converts_messages_tools_and_metadata() -> None:
             "output": "2 failed\n[exit code: 2]",
         }
     ]
+    shell_item = next(item for item in payload["metadata"]["conversation"] if item["role"] == "shell")
+    assert (shell_item["exit_code"], shell_item["status"]) == (2, "completed")
     assert payload["errors"] == []
     deepseek = payload["metadata"]["deepseek_harness"]
     assert deepseek["format_version"] == FORMAT_VERSION
@@ -372,6 +374,7 @@ def test_incomplete_tool_calls_are_preserved_in_call_order() -> None:
     assert [call["status"] for call in payload["tool_calls"]] == ["pending", "completed"]
     assert payload["tool_calls"][0]["output"] is None
     assert "Pending" in payload["metadata"]["conversation"][0]["content"]
+    assert payload["metadata"]["conversation"][0]["status"] == "pending"
     assert payload["shell_commands"] == []
     assert payload["errors"] == []
 
@@ -525,6 +528,12 @@ def test_shell_commands_keep_background_and_killed_semantics() -> None:
             "output": "killed\n[killed by signal: SIGTERM]",
         },
     ]
+    shell_items = [item for item in payload["metadata"]["conversation"] if item["role"] == "shell"]
+    assert [(item["status"], item["exit_code"]) for item in shell_items] == [
+        ("running", None),
+        ("killed", 143),
+    ]
+    assert shell_items[0]["background_job"] == "bash-9"
 
 
 @pytest.mark.parametrize(

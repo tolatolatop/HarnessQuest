@@ -2,24 +2,34 @@ import { RotateCcw, Search, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { t } from '../../../config/i18n';
 import { request } from '../../../core/api/client';
+import { formatLocalTimestamp } from '../../../core/utils/format';
 import { extractSessionChatBlocks, isCollapsedByDefault, matchesBlockQuery } from '../../../core/utils/chat';
 import type { JsonValue, Session } from '../../../types/domain';
+
+const INITIAL_VISIBLE_BLOCKS = 60;
 
 export function SessionChatModal({ sessionId, onClose }: { sessionId: string; onClose: () => void }) {
   const [session, setSession] = useState<Session | null>(null);
   const [raw, setRaw] = useState<JsonValue | null>(null);
   const [showJson, setShowJson] = useState(false);
   const [blockQuery, setBlockQuery] = useState('');
+  const [visibleCount, setVisibleCount] = useState(INITIAL_VISIBLE_BLOCKS);
+  useEffect(() => {
+    setVisibleCount(INITIAL_VISIBLE_BLOCKS);
+  }, [blockQuery]);
   useEffect(() => {
     setSession(null);
     setRaw(null);
     setBlockQuery('');
+    setVisibleCount(INITIAL_VISIBLE_BLOCKS);
     void request<Session>(`/sessions/${sessionId}`).then(setSession);
     void request<JsonValue>(`/sessions/${sessionId}/raw`).then(setRaw);
   }, [sessionId]);
   const blocks = extractSessionChatBlocks(session?.metadata_json, raw);
   const transcriptReady = blocks.length > 0 || raw !== null;
-  const visibleBlocks = blocks.filter(block => matchesBlockQuery(block, blockQuery));
+  const filteredBlocks = blocks.filter(block => matchesBlockQuery(block, blockQuery));
+  const visibleBlocks = filteredBlocks.slice(0, visibleCount);
+  const remainingBlocks = filteredBlocks.length - visibleBlocks.length;
   return (
     <div className="modalOverlay" role="presentation" onMouseDown={onClose}>
       <section className="sessionModal" role="dialog" aria-modal="true" aria-label={t.fullConversation} onMouseDown={e => e.stopPropagation()}>
@@ -41,7 +51,7 @@ export function SessionChatModal({ sessionId, onClose }: { sessionId: string; on
             <input value={blockQuery} onChange={e => setBlockQuery(e.target.value)} placeholder={t.searchConversationBlocks} />
             {blockQuery && <button className="iconButton" aria-label={t.reset} onClick={() => setBlockQuery('')}><RotateCcw size={15} /></button>}
           </div>
-          <span>{t.blockSearchSummary.replace('{visible}', String(visibleBlocks.length)).replace('{total}', String(blocks.length))}</span>
+          <span>{t.blockSearchSummary.replace('{visible}', String(filteredBlocks.length)).replace('{total}', String(blocks.length))}</span>
         </div>
         <div className="chatTranscript">
           {!transcriptReady && <div className="chatBubble system">{t.loading}</div>}
@@ -51,12 +61,25 @@ export function SessionChatModal({ sessionId, onClose }: { sessionId: string; on
               <details className="chatBubble" open={!isCollapsedByDefault(block.kind)}>
                 <summary className="chatTitle">
                   <span className="chatKind"><strong>{block.title}</strong></span>
-                  {block.meta && <span>{block.meta}</span>}
+                  <span className="chatBadges">
+                    {block.status && <em className={`chatStatus ${block.statusTone ?? 'muted'}`}>{block.status}</em>}
+                    {block.meta && <span className="chatMeta">{formatLocalTimestamp(block.meta)}</span>}
+                  </span>
                 </summary>
                 <pre>{block.body}</pre>
               </details>
             </article>
           ))}
+          {remainingBlocks > 0 && (
+            <div className="chatMore">
+              <button
+                className="secondaryButton"
+                onClick={() => setVisibleCount(count => count + INITIAL_VISIBLE_BLOCKS)}
+              >
+                {t.loadMoreBlocks.replace('{count}', String(remainingBlocks))}
+              </button>
+            </div>
+          )}
         </div>
         <footer className="modalFooter">
           <button onClick={() => setShowJson(!showJson)}>{showJson ? t.hideJson : t.showJson}</button>
